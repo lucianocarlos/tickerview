@@ -1,0 +1,192 @@
+{
+    "_help": [
+        "target_strategies: Estratégias de construção do alvo (ex: outperformance, fundamental_turnaround, volatility_regime, directional_regime, drawdown_risk, dividend_trap_regime)",
+        "inf_handling_strategies: Como lidar com divisões por zero geradas nos Ratios (ex: replace_nan, drop_row)",
+        "imputation_strategies: Como imputar Nulos (ex: fill_zero, sector_median)",
+        "outlier_handling_methods: Como cortar limites extremos (ex: none, clip_99_1, clip_95_5, zscore_3, iqr_1_5)",
+        "scaling_methods: Padronização final das features (ex: none, standard, minmax, robust)"
+    ],
+    "datalake_name": "bateria01",
+    "calculate_permutation_importance": false,
+    "datasets": [
+        "dataset001"
+    ],
+    "target_strategies": [
+        "outperformance",
+        "volatility_regime",
+        "directional_regime",
+        "fundamental_turnaround",
+        "drawdown_risk",
+        "dividend_trap_regime"
+    ],
+    "target_definition": {
+        "horizon_days": 10,
+        "threshold": 0.02
+    },
+    "split_strategies": [
+        {
+            "method": "temporal_holdout",
+            "train_ratio": 0.70,
+            "val_ratio": 0.15,
+            "test_ratio": 0.15
+        },
+        {
+            "method": "tsp",
+            "n_splits": 5
+        }
+    ],
+    "inf_handling_strategies": [
+        "replace_nan"
+    ],
+    "imputation_strategies": [
+        "drop_all",
+        "sector_median",
+        "fill_zero"
+    ],
+    "outlier_handling_methods": [
+        "none",
+        "clip_99_1"
+    ],
+    "scaling_methods": [
+        "robust"
+    ],
+    "models": {
+        "decision_tree": {
+            "class_weight": [
+                "balanced"
+            ],
+            "max_depth": [
+                5,
+                9
+            ],
+            "min_samples_split": [
+                10,
+                20
+            ],
+            "feature_selection_top_k": [
+                30,
+                null
+            ]
+        },
+        "random_forest": {
+            "n_estimators": [
+                50,
+                80
+            ],
+            "max_depth": [
+                3,
+                5,
+                8
+            ],
+            "class_weight": [
+                "balanced"
+            ],
+            "feature_selection_top_k": [
+                30,
+                null
+            ]
+        },
+        "xgboost": {
+            "n_estimators": [
+                50,
+                100
+            ],
+            "max_depth": [
+                3,
+                5,
+                8
+            ],
+            "learning_rate": [
+                0.05,
+                0.1
+            ],
+            "feature_selection_top_k": [
+                30,
+                null
+            ]
+        },
+        "mlp": {
+            "hidden_layer_sizes": [
+                [
+                    50
+                ],
+                [
+                    100
+                ]
+            ],
+            "activation": [
+                "relu",
+                "tanh"
+            ],
+            "learning_rate_init": [
+                0.001,
+                0.01
+            ],
+            "max_iter": [
+                1000
+            ],
+            "feature_selection_top_k": [
+                30,
+                null
+            ]
+        },
+        "logistic_regression": {
+            "C": [
+                0.1,
+                1.0,
+                10.0
+            ],
+            "penalty": [
+                "l2"
+            ],
+            "feature_selection_top_k": [
+                30,
+                null
+            ]
+        },
+        "knn": {
+            "n_neighbors": [
+                5,
+                9
+            ],
+            "weights": [
+                "distance"
+            ],
+            "metric": [
+                "minkowski",
+                "manhattan",
+                "euclidean"
+            ],
+            "feature_selection_top_k": [
+                30,
+                null
+            ]
+        },
+        "voting_classifier": {
+            "weights": [
+                [
+                    0.25,
+                    0.25,
+                    0.25,
+                    0.25
+                ],
+                [
+                    0.55,
+                    0.15,
+                    0.15,
+                    0.15
+                ],
+                [
+                    0.15,
+                    0.15,
+                    0.15,
+                    0.55
+                ]
+            ],
+            "feature_selection_top_k": [
+                30,
+                null
+            ]
+        }
+    }
+}

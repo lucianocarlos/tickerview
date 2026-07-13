@@ -1,0 +1,6 @@
+{
+    "_help": [
+        "aquisicao_alvo: Qual pasta de aquisicao usar na camada raw. Use 'latest' para usar a mais recente, ou passe o nome exato (ex: aquisicao_001)"
+    ],
+    "aquisicao_alvo": "aquisicao_001"
+}

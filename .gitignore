@@ -1,0 +1,13 @@
+# Ignorar banco de dados e arquivos pesados 
+data/
+docs/
+*.parquet 
+*.duckdb
+*.db
+*.sqlite 
+# Ignorar arquivos de cache do Python e Jupyter 
+__pycache__/ 
+*.pyc 
+.ipynb_checkpoints/
+venv/
+.env

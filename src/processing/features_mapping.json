@@ -1,0 +1,81 @@
+{
+    "_help": [
+        "Tratamento_NaNs_Series_Temporais: Opções de tratamento de valores nulos (NaN) para dados de séries temporais de preços.",
+        "Tratamento_NaNs_Financas: Opções de imputação de NaN para variáveis contábeis financeiras (ex: CVM).",
+        "Tratamento_NaNs_Estaticos: Estratégias de imputação de nulos para dados estáticos/metadados cadastrais.",
+        "Tratamento_Outliers: Algoritmos para filtragem ou suavização de outliers nos dados numéricos.",
+        "Normalizacao_Padronizacao: Técnicas de reescala de features numéricas.",
+        "Tratamento_NaNs_Balanco_Yahoo: Estratégias específicas para NaNs oriundos de balanços do Yahoo Finance.",
+        "Tratamento_Infinitos_Mestre: Estratégias para lidar com valores infinitos (np.inf, -np.inf) gerados em divisões contábeis no join final.",
+        "Tratamento_NaNs_Mestre_Final: Decisões de imputação finais tomadas durante o join mestre de todos os datasets.",
+        "--- Opções de Preenchimento (Series Temporais) ---",
+        "drop: Descarta a linha/data inteira que contenha valores nulos (Cuidado com a perda de histórico).",
+        "ffill: Forward Fill. Repete o último valor financeiro/preço válido para os dias seguintes em branco.",
+        "bfill: Backward Fill. Busca o próximo valor válido no futuro e 'puxa' ele para os dias anteriores em branco.",
+        "interpolate_linear: Preenche o buraco no gráfico traçando uma reta matemática entre o ponto anterior conhecido e o próximo ponto conhecido.",
+        "--- Outras Opções de Imputação ---",
+        "fill_zero: Preenche os buracos com o valor numérico 0 (Zero).",
+        "drop_row: Elimina a linha inteira do dataset se tiver valor ausente (cuidado com a perda de ativos).",
+        "sector_median: Substitui o valor nulo pela mediana dos valores de outras empresas do MESMO setor.",
+        "sector_mean: Substitui o valor nulo pela média matemática dos valores do mesmo setor.",
+        "global_median: Substitui pela mediana de todo o universo da bolsa (sem olhar setor).",
+        "drop_column_if_high_nan: Apaga a coluna inteira se a taxa de dados ausentes nela ultrapassar o limite aceitável.",
+        "replace_nan: Converte valores infinitos (vindas de divisões por zero) para NaN, deixando para a próxima etapa tratá-los.",
+        "drop_all: Varredura final que apaga sumariamente qualquer linha que ainda tenha restado com NaN no join mestre.",
+        "fill_median_sector: Varredura final que salva as linhas preenchendo os últimos NaNs com a mediana do setor.",
+        "--- Tratamento de Outliers ---",
+        "none: Não aplica nenhum filtro de outliers. Mantém os dados originais.",
+        "clip_99_1: Achata (Winsorize) valores extremos cortando os top 1% maiores e os 1% menores, nivelando-os ao percentil 99/1.",
+        "clip_95_5: Corte mais agressivo, achatando os top 5% maiores e 5% menores.",
+        "zscore_3: Apaga os dados que fogem a 3 desvios-padrões de distância do centro da distribuição (aprox 99.7% da curva de sino).",
+        "iqr_1_5: Usa o método dos Quartis (Boxplot). Se passar de 1.5x a distância interquartil, é considerado outlier e removido.",
+        "--- Escalonamento (Padronização) ---",
+        "standard: StandardScaler (Média=0, Desvio Padrão=1). Centraliza a curva de sino.",
+        "minmax: MinMaxScaler. Espreme todos os valores proporcionalmente para caberem dentro de um intervalo rígido de 0 a 1.",
+        "robust: RobustScaler. Similar ao standard, mas imune a outliers porque usa a Mediana e Quartis em vez de Média."
+    ],
+    "Tratamento_NaNs_Series_Temporais": [
+        "drop",
+        "ffill",
+        "bfill",
+        "interpolate_linear"
+    ],
+    "Tratamento_NaNs_Financas": [
+        "fill_zero",
+        "drop_row",
+        "sector_median"
+    ],
+    "Tratamento_NaNs_Estaticos": [
+        "sector_median",
+        "sector_mean",
+        "global_median"
+    ],
+    "Tratamento_Outliers": [
+        "none",
+        "clip_99_1",
+        "clip_95_5",
+        "zscore_3",
+        "iqr_1_5"
+    ],
+    "Normalizacao_Padronizacao": [
+        "none",
+        "standard",
+        "minmax",
+        "robust"
+    ],
+    "Tratamento_NaNs_Balanco_Yahoo": [
+        "drop_column_if_high_nan",
+        "fill_zero",
+        "sector_median"
+    ],
+    "Tratamento_Infinitos_Mestre": [
+        "replace_nan",
+        "drop_row",
+        "none"
+    ],
+    "Tratamento_NaNs_Mestre_Final": [
+        "drop_all",
+        "fill_median_sector",
+        "fill_zero"
+    ]
+}
