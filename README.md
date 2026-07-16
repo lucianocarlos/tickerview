@@ -15,7 +15,7 @@ Caso deseje executar a aplicação na sua própria máquina (para inspecionar o 
 ### 1. Pré-requisitos
 Certifique-se de ter os seguintes softwares instalados em sua máquina:
 - **Git** (para clonar o repositório)
-- **Python 3.9+** 
+- **Python 3.14.3+** 
 
 ### 2. Clonando o Repositório
 Abra o seu terminal (Prompt de Comando, PowerShell ou Terminal do Linux/Mac) e execute o comando abaixo para baixar o código:
