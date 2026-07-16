@@ -13,6 +13,7 @@ data/datalake/*/*
 *.parquet 
 *.duckdb
 *.sqlite 
+*.joblib
 
 # Ignorar arquivos de cache do Python e Jupyter 
 __pycache__/ 
@@ -24,5 +25,4 @@ venv/
 # Ignorar logs, saídas e arquivos temporários
 *.log
 *.zip
-out.txt
-recover_classifier.txt
+*.txt
