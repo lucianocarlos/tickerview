@@ -1,3 +1,4 @@
+from asyncio import protocols
 import streamlit as st
 import plotly.graph_objects as go
 from views.view_xray import render_xray
@@ -26,16 +27,22 @@ def render_summary_card(df_filtered, selected_exp, sort_metric, panel_id, summar
     if summary_view == "Densidade":
         fig.add_trace(
             go.Histogram(
-                x=df_filtered[sort_metric], marker_color="#5A92D8", opacity=0.75
+                x=df_filtered[sort_metric],
+                marker_color="#5A92D8",
+                opacity=0.75,
+                xbins=dict(
+                    start=0.0,
+                    end=1.0,
+                    size=0.05,  # Define o tamanho do bin (escala de agrupamento)
+                ),
             )
         )
         if val_selected is not None:
             fig.add_vline(
-                x=val_selected, line_width=2, line_dash="dash", line_color="red"
+                x=val_selected, line_width=0.5, line_dash="dot", line_color="red"
             )
-
-        best_val = df_filtered[sort_metric].max()
-        fig.add_vline(x=best_val, line_width=2, line_dash="dot", line_color="gold")
+        #        best_val = df_filtered[sort_metric].max()
+        #        fig.add_vline(x=best_val, line_width=0.5, line_dash="dot", line_color="green")
 
         fig.update_layout(
             xaxis=dict(
@@ -43,6 +50,7 @@ def render_summary_card(df_filtered, selected_exp, sort_metric, panel_id, summar
                 showgrid=False,
                 zeroline=False,
                 tickfont=dict(size=8, color="gray"),
+                range=[0.0, 1.0],  # Fixa a escala do Eixo X de 0 a 1
             ),
             yaxis=dict(visible=False),
             bargap=0.1,
