@@ -6,7 +6,7 @@
         "outlier_handling_methods: Como cortar limites extremos (ex: none, clip_99_1, clip_95_5, zscore_3, iqr_1_5)",
         "scaling_methods: Padronização final das features (ex: none, standard, minmax, robust)"
     ],
-    "datalake_name": "bateria01",
+    "datalake_name": "bateria02",
     "calculate_permutation_importance": false,
     "datasets": [
         "dataset001"

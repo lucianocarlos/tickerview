@@ -1,13 +1,28 @@
-# Ignorar banco de dados e arquivos pesados 
-data/
+# Ignorar conteúdo de data/ (mas não o diretório em si)
+data/*
 docs/
+
+# EXCEÇÃO: permitir somente os datalake.db dentro de data/datalake/*/
+!data/datalake/
+data/datalake/*
+!data/datalake/*/
+data/datalake/*/*
+!data/datalake/*/datalake.db
+
+# Ignorar banco de dados e arquivos pesados (fora de data/)
 *.parquet 
 *.duckdb
-*.db
 *.sqlite 
+
 # Ignorar arquivos de cache do Python e Jupyter 
 __pycache__/ 
 *.pyc 
 .ipynb_checkpoints/
 venv/
 .env
+
+# Ignorar logs, saídas e arquivos temporários
+*.log
+*.zip
+out.txt
+recover_classifier.txt

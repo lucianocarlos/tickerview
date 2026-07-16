@@ -133,6 +133,21 @@ def model_exists(experiment_id, model_name, hyperparameters):
     conn.close()
     return row is not None
 
+def get_trained_models(experiment_id):
+    """Retorna um set com (model_name, hyperparameters_str) dos modelos já treinados para um experimento."""
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute('''
+        SELECT model_name, hyperparameters FROM models
+        WHERE experiment_id = ?
+    ''', (experiment_id,))
+    
+    rows = cur.fetchall()
+    conn.close()
+    
+    # Retorna como um set de tuplas para checagem O(1) em memória
+    return set((row[0], row[1]) for row in rows)
+
 def save_model_results(experiment_id, model_name, hyperparameters, exec_time_sec, 
                        metrics_class, confusion_matrix, feature_importances, importance_type="entropy"):
     """
