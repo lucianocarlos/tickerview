@@ -285,6 +285,7 @@ def main():
         div[data-testid="stElementContainer"]:has(.horizontal-scroll-marker) + div[data-testid="stHorizontalBlock"] {
             overflow-x: auto !important;
             flex-wrap: nowrap !important;
+            padding-top: 6px !important;
             padding-bottom: 5px !important;
             align-items: flex-start !important;
             margin-top: 0px !important; /* Reset child margin-top */
@@ -368,6 +369,7 @@ def main():
             if(b.children.length > 10) { 
                 b.style.setProperty("overflow-x", "auto", "important");
                 b.style.setProperty("flex-wrap", "nowrap", "important");
+                b.style.setProperty("padding-top", "6px", "important");
                 b.style.setProperty("padding-bottom", "5px", "important");
                 
                 b.children[0].style.removeProperty("position");
