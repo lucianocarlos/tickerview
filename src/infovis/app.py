@@ -47,105 +47,102 @@ def render_comparative_panel(idx, panel, available_datasets, metric_labels):
     col_left, col_right = st.columns([2.3, 7.7])
 
     with col_left:
-        col_menu, col_summary = st.columns([0.8, 1.5])
+        col_menu, col_summary = st.columns([0.45, 1.85])
 
         with col_menu:
             st.markdown(
                 "<div style='margin-bottom: 25px;'></div>", unsafe_allow_html=True
             )
-            col_m1, col_m2 = st.columns(2)
 
-            with col_m1:
-                with st.popover("🗂️", use_container_width=True):
-                    st.markdown("**Selecione a Bateria:**")
-                    panel["dataset"] = st.radio(
-                        "Dataset",
-                        available_datasets,
-                        index=available_datasets.index(panel["dataset"])
-                        if panel["dataset"] in available_datasets
-                        else 0,
-                        key=f"ds_{panel_id}",
-                        label_visibility="collapsed",
-                    )
+            with st.popover("🗂️", use_container_width=True):
+                st.markdown("**Selecione a Bateria:**")
+                panel["dataset"] = st.radio(
+                    "Dataset",
+                    available_datasets,
+                    index=available_datasets.index(panel["dataset"])
+                    if panel["dataset"] in available_datasets
+                    else 0,
+                    key=f"ds_{panel_id}",
+                    label_visibility="collapsed",
+                )
 
-                with st.popover("🎯", use_container_width=True):
-                    st.markdown("**Filtrar Target Strategy:**")
-                    panel["target_filter"] = st.radio(
-                        "Target",
-                        targets,
-                        index=targets.index(panel["target_filter"])
-                        if panel["target_filter"] in targets
-                        else 0,
-                        key=f"target_{panel_id}",
-                        label_visibility="collapsed",
-                    )
+            with st.popover("↕️", use_container_width=True):
+                st.markdown("**Critério de Ordenação:**")
+                if "sort_ascending" not in panel:
+                    panel["sort_ascending"] = False
 
-                with st.popover("🧠", use_container_width=True):
-                    st.markdown("**Filtrar Model Type:**")
-                    panel["model_filter"] = st.radio(
-                        "Model",
-                        models,
-                        index=models.index(panel["model_filter"])
-                        if panel["model_filter"] in models
-                        else 0,
-                        key=f"model_{panel_id}",
-                        label_visibility="collapsed",
-                    )
+                for metric_key, metric_label in metric_labels.items():
+                    is_selected = panel["sort_metric"] == metric_key
 
-            with col_m2:
-                with st.popover("↕️", use_container_width=True):
-                    st.markdown("**Critério de Ordenação:**")
-                    if "sort_ascending" not in panel:
-                        panel["sort_ascending"] = False
+                    if is_selected:
+                        arrow = " 🔼" if panel["sort_ascending"] else " 🔽"
+                        label = f"{metric_label}{arrow}"
+                        b_type = "primary"
+                    else:
+                        label = metric_label
+                        b_type = "secondary"
 
-                    for metric_key, metric_label in metric_labels.items():
-                        is_selected = panel["sort_metric"] == metric_key
-
+                    if st.button(
+                        label,
+                        key=f"btn_sort_{panel_id}_{metric_key}",
+                        use_container_width=True,
+                        type=b_type,
+                    ):
                         if is_selected:
-                            arrow = " 🔼" if panel["sort_ascending"] else " 🔽"
-                            label = f"{metric_label}{arrow}"
-                            b_type = "primary"
+                            panel["sort_ascending"] = not panel["sort_ascending"]
                         else:
-                            label = metric_label
-                            b_type = "secondary"
+                            panel["sort_metric"] = metric_key
+                            panel["sort_ascending"] = False
+                        st.rerun()
 
-                        if st.button(
-                            label,
-                            key=f"btn_sort_{panel_id}_{metric_key}",
-                            use_container_width=True,
-                            type=b_type,
-                        ):
-                            if is_selected:
-                                panel["sort_ascending"] = not panel["sort_ascending"]
-                            else:
-                                panel["sort_metric"] = metric_key
-                                panel["sort_ascending"] = False
-                            st.rerun()
+            with st.popover("🎯", use_container_width=True):
+                st.markdown("**Filtrar Target Strategy:**")
+                panel["target_filter"] = st.radio(
+                    "Target",
+                    targets,
+                    index=targets.index(panel["target_filter"])
+                    if panel["target_filter"] in targets
+                    else 0,
+                    key=f"target_{panel_id}",
+                    label_visibility="collapsed",
+                )
 
-                with st.popover("✂️", use_container_width=True):
-                    st.markdown("**Filtrar Split Method:**")
-                    panel["split_filter"] = st.radio(
-                        "Split",
-                        splits,
-                        index=splits.index(panel["split_filter"])
-                        if panel["split_filter"] in splits
-                        else 0,
-                        key=f"split_{panel_id}",
-                        label_visibility="collapsed",
-                    )
+            with st.popover("✂️", use_container_width=True):
+                st.markdown("**Filtrar Split Method:**")
+                panel["split_filter"] = st.radio(
+                    "Split",
+                    splits,
+                    index=splits.index(panel["split_filter"])
+                    if panel["split_filter"] in splits
+                    else 0,
+                    key=f"split_{panel_id}",
+                    label_visibility="collapsed",
+                )
 
-                with st.popover("📊", use_container_width=True):
-                    st.markdown("**Visão Global:**")
-                    view_opts = ["Densidade", "Overfitting", "Pareto", "KPIs"]
-                    panel["summary_view"] = st.radio(
-                        "Global View",
-                        view_opts,
-                        index=view_opts.index(panel["summary_view"])
-                        if panel.get("summary_view") in view_opts
-                        else 0,
-                        key=f"view_{panel_id}",
-                        label_visibility="collapsed",
-                    )
+            with st.popover("🧠", use_container_width=True):
+                st.markdown("**Filtrar Model Type:**")
+                panel["model_filter"] = st.radio(
+                    "Model",
+                    models,
+                    index=models.index(panel["model_filter"])
+                    if panel["model_filter"] in models
+                    else 0,
+                    key=f"model_{panel_id}",
+                    label_visibility="collapsed",
+                )
+
+            with st.popover("📊", use_container_width=True):
+                st.markdown("**Visão Global:**")
+                view_opts = ["Densidade", "Overfitting", "Pareto", "KPIs"]
+                panel["summary_view"] = st.radio(
+                    "Global View",
+                    view_opts,
+                    index=view_opts.index(panel["summary_view"])
+                    if panel.get("summary_view") in view_opts
+                    else 0,
+                    key=f"view_{panel_id}",
+                    label_visibility="collapsed",
+                )
 
             if idx > 0:
                 st.markdown(
@@ -230,13 +227,23 @@ def main():
             max-width: 99% !important;
         }
         div[data-testid="column"] {
-            gap: 0.1rem !important;
+            gap: 0rem !important;
         }
         div[data-testid="column"] [data-testid="stVerticalBlock"] {
-            gap: 0.1rem !important;
+            gap: 0rem !important;
         }
         div[data-testid="stHorizontalBlock"] [data-testid="stVerticalBlock"] {
             gap: 0rem !important;
+        }
+        div[data-testid="stElementContainer"] {
+            margin-bottom: 0rem !important;
+            padding-bottom: 0rem !important;
+        }
+        div[data-testid="stPopover"] {
+            margin-top: 0rem !important;
+            margin-bottom: 0rem !important;
+            padding-top: 0rem !important;
+            padding-bottom: 0rem !important;
         }
         
         hr {
