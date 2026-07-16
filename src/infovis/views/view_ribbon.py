@@ -4,10 +4,10 @@ from views.view_xray import render_xray
 
 
 def render_summary_card(df_filtered, selected_exp, sort_metric, panel_id, summary_view):
-    st.markdown(
-        f"<div style='font-size: 0.9em; font-weight: bold; text-align: center;'>{summary_view}</div>",
-        unsafe_allow_html=True,
-    )
+    #    st.markdown(
+    #        f"<div style='font-size: 0.9em; font-weight: bold; text-align: center;'>{summary_view}</div>",
+    #        unsafe_allow_html=True,
+    #    )
 
     if df_filtered.empty:
         st.warning("Sem dados.")
