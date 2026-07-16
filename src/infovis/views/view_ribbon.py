@@ -62,7 +62,7 @@ def render_summary_card(df_filtered, selected_exp, sort_metric, panel_id, summar
                 x=df_filtered["val_f1_score_macro"],
                 y=df_filtered["test_f1_score_macro"],
                 mode="markers",
-                marker=dict(color="#5A92D8", size=5, opacity=0.6),
+                marker=dict(color="#5A92D8", size=3, opacity=0.6),
                 text=df_filtered["exp_id"],
                 hoverinfo="text",
             )
@@ -74,7 +74,7 @@ def render_summary_card(df_filtered, selected_exp, sort_metric, panel_id, summar
                     x=[row_selected["val_f1_score_macro"]],
                     y=[row_selected["test_f1_score_macro"]],
                     mode="markers",
-                    marker=dict(color="red", size=8, symbol="star"),
+                    marker=dict(color="red", size=5, symbol="star"),
                 )
             )
 
@@ -92,7 +92,7 @@ def render_summary_card(df_filtered, selected_exp, sort_metric, panel_id, summar
             y0=min_val,
             x1=max_val,
             y1=max_val,
-            line=dict(color="gray", dash="dash"),
+            line=dict(color="gray", dash="dot", width=0.5),
         )
 
         fig.update_layout(
@@ -112,7 +112,7 @@ def render_summary_card(df_filtered, selected_exp, sort_metric, panel_id, summar
                 x=df_filtered["test_precision_macro"],
                 y=df_filtered["test_recall_macro"],
                 mode="markers",
-                marker=dict(color="#5A92D8", size=5, opacity=0.6),
+                marker=dict(color="#5A92D8", size=3, opacity=0.6),
                 text=df_filtered["exp_id"],
                 hoverinfo="text",
             )
@@ -124,7 +124,7 @@ def render_summary_card(df_filtered, selected_exp, sort_metric, panel_id, summar
                     x=[row_selected["test_precision_macro"]],
                     y=[row_selected["test_recall_macro"]],
                     mode="markers",
-                    marker=dict(color="red", size=8, symbol="star"),
+                    marker=dict(color="red", size=5, symbol="star"),
                 )
             )
 
