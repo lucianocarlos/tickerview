@@ -190,7 +190,9 @@ def executar_bateria_teste(config_path):
     file_name_fallback = os.path.basename(config_path).replace(".json", "")
     battery_name = config.get("datalake_name", file_name_fallback)
 
-    dynamic_db_path = os.path.join("data", "datalake", battery_name, "datalake.db")
+    project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
+
+    dynamic_db_path = os.path.join(project_root, "data", "datalake", battery_name, "datalake.db")
     db_manager.set_db_path(dynamic_db_path)
 
     # Verifica se já existe um checkpoint Pai (a própria Bateria)
@@ -203,7 +205,6 @@ def executar_bateria_teste(config_path):
     )
 
     dataset_vs = config.get("datasets", ["dataset003"])
-    project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 
     for dataset_v in dataset_vs:
         print(f"\n[INFO] Iniciando Pipeline para o Dataset: {dataset_v}")
@@ -238,7 +239,7 @@ def executar_bateria_teste(config_path):
         print(f"       -> Dataset cadastrado/recuperado no Banco! ID: {dataset_id}")
 
         # Salvar dados brutos uma vez no disco para evitar serialização massiva via Joblib
-        cache_dir = os.path.join("data", "datalake", battery_name, "cache")
+        cache_dir = os.path.join(project_root, "data", "datalake", battery_name, "cache")
         os.makedirs(cache_dir, exist_ok=True)
         raw_cache_path = os.path.join(cache_dir, f"raw_{dataset_v}.parquet")
         df_raw.to_parquet(raw_cache_path)
