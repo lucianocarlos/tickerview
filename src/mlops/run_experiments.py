@@ -60,7 +60,22 @@ def worker_preprocessamento(
     except Exception as e:
         return {"status": "error", "exp_id": exp_id, "error_msg": str(e)}
 
-def worker_single_model(X_train, y_train, X_val, y_val, X_test, y_test, feature_cols, model_name, params, exp_id, calc_permutation, fs_cache, force_cpu=False):
+
+def worker_single_model(
+    X_train,
+    y_train,
+    X_val,
+    y_val,
+    X_test,
+    y_test,
+    feature_cols,
+    model_name,
+    params,
+    exp_id,
+    calc_permutation,
+    fs_cache,
+    force_cpu=False,
+):
     """Treina um único modelo em uma thread separada. Utilizado no Steal Phase da CPU."""
     model_start = time.time()
     try:
@@ -81,24 +96,28 @@ def worker_single_model(X_train, y_train, X_val, y_val, X_test, y_test, feature_
             )
         )
         model_time = time.time() - model_start
-        return [{
-            "status": "success",
-            "exp_id": exp_id,
-            "model_name": model_name,
-            "params": params,
-            "metrics": metrics,
-            "conf_mat": conf_mat,
-            "feature_importances": feature_importances,
-            "importance_type": importance_type,
-            "model_time": model_time,
-        }]
+        return [
+            {
+                "status": "success",
+                "exp_id": exp_id,
+                "model_name": model_name,
+                "params": params,
+                "metrics": metrics,
+                "conf_mat": conf_mat,
+                "feature_importances": feature_importances,
+                "importance_type": importance_type,
+                "model_time": model_time,
+            }
+        ]
     except Exception as e:
-        return [{
-            "status": "error",
-            "exp_id": exp_id,
-            "model_name": model_name,
-            "error_msg": str(e),
-        }]
+        return [
+            {
+                "status": "error",
+                "exp_id": exp_id,
+                "model_name": model_name,
+                "error_msg": str(e),
+            }
+        ]
 
 
 def worker_treinar_lote(cache_path, modelos_lista, calc_permutation):
@@ -290,7 +309,9 @@ def executar_bateria_teste(config_path):
                                         exp_id,
                                     )
                                 )
-                                trained_models_set = db_manager.get_trained_models(exp_id)
+                                trained_models_set = db_manager.get_trained_models(
+                                    exp_id
+                                )
 
                                 for model_name, param_grid in models_config.items():
                                     if model_name.startswith("_"):
@@ -304,8 +325,15 @@ def executar_bateria_teste(config_path):
                                     grid = list(ParameterGrid(clean_param_grid))
 
                                     for params in grid:
-                                        hparams_str = json.dumps(params, ensure_ascii=False) if isinstance(params, dict) else params
-                                        if (model_name, hparams_str) not in trained_models_set:
+                                        hparams_str = (
+                                            json.dumps(params, ensure_ascii=False)
+                                            if isinstance(params, dict)
+                                            else params
+                                        )
+                                        if (
+                                            model_name,
+                                            hparams_str,
+                                        ) not in trained_models_set:
                                             task_tuple = (
                                                 cache_path,
                                                 model_name,
@@ -314,7 +342,12 @@ def executar_bateria_teste(config_path):
                                                 global_permutation,
                                             )
                                             todas_as_tasks.append(task_tuple)
-                                            if model_name in ["knn", "mlp", "logistic_regression", "voting_classifier"]:
+                                            if model_name in [
+                                                "knn",
+                                                "mlp",
+                                                "logistic_regression",
+                                                "voting_classifier",
+                                            ]:
                                                 tarefas_gpu.append(task_tuple)
                                             else:
                                                 tarefas_cpu.append(task_tuple)
@@ -353,16 +386,18 @@ def executar_bateria_teste(config_path):
 
         # Preparar lotes globais
         lotes_cpu_dict = defaultdict(list)
-        for (cache_path, model_name, params, exp_id, _) in tarefas_cpu:
+        for cache_path, model_name, params, exp_id, _ in tarefas_cpu:
             lotes_cpu_dict[cache_path].append((model_name, params, exp_id))
 
         lotes_gpu_dict = defaultdict(list)
-        for (cache_path, model_name, params, exp_id, _) in tarefas_gpu:
+        for cache_path, model_name, params, exp_id, _ in tarefas_gpu:
             lotes_gpu_dict[cache_path].append((model_name, params, exp_id))
 
         lotes_totais = len(lotes_cpu_dict) + len(lotes_gpu_dict)
         total_tarefas = len(tarefas_cpu) + len(tarefas_gpu)
-        print(f"       -> {len(lotes_cpu_dict)} lotes nativos CPU, {len(lotes_gpu_dict)} lotes nativos GPU")
+        print(
+            f"       -> {len(lotes_cpu_dict)} lotes nativos CPU, {len(lotes_gpu_dict)} lotes nativos GPU"
+        )
 
         queue_gpu = queue.Queue()
         for cp, modelos in lotes_gpu_dict.items():
@@ -392,13 +427,13 @@ def executar_bateria_teste(config_path):
                                 importance_type=res["importance_type"],
                             )
                         modelos_treinados += 1
-                        
+
                         elapsed = time.time() - parallel_start
                         vel = modelos_treinados / elapsed
                         rem = total_tarefas - modelos_treinados
                         eta = rem / vel if vel > 0 else 0
                         eta_m, eta_s = divmod(int(eta), 60)
-                        
+
                         print(
                             f"   -> [{stage_name}] Exp {exp_id_res}: {res['model_name']} salvo. F1: {res['metrics']['test_f1_macro']:.4f} | Tempo: {res['model_time']:.1f}s | ETA: {eta_m}m {eta_s}s"
                         )
@@ -406,36 +441,48 @@ def executar_bateria_teste(config_path):
                         print(
                             f"   -> [ERRO FATAL] Exp {exp_id_res}: Falha no {res['model_name']}: {res['error_msg']}"
                         )
-                
+
                 with db_lock:
                     lotes_concluidos += 1
                     lotes_do_estagio += 1
-                
+
                 if lotes_do_estagio >= num_lotes:
                     break
 
         def run_gpu():
-            print(f"\n[INFO] INICIANDO Fila de GPU: {len(tarefas_gpu)} modelos na base...")
+            print(
+                f"\n[INFO] INICIANDO Fila de GPU: {len(tarefas_gpu)} modelos na base..."
+            )
             with ProcessPoolExecutor(max_workers=1) as executor:
                 while not queue_gpu.empty():
                     try:
                         cp, modelos = queue_gpu.get_nowait()
                     except queue.Empty:
                         break
-                    
-                    future = executor.submit(worker_treinar_lote, cp, modelos, global_permutation)
+
+                    future = executor.submit(
+                        worker_treinar_lote, cp, modelos, global_permutation
+                    )
                     processar_resultados_futures([future], "GPU-NATIVE", 1)
             print("[INFO] Fila de GPU finalizada.")
 
         def run_cpu():
-            print(f"\n[INFO] INICIANDO Fila de CPU: {len(tarefas_cpu)} modelos nativos...")
+            print(
+                f"\n[INFO] INICIANDO Fila de CPU: {len(tarefas_cpu)} modelos nativos..."
+            )
             with ProcessPoolExecutor(max_workers=3) as executor:
                 cpu_futures = [
-                    executor.submit(worker_treinar_lote, cp, modelos, global_permutation)
+                    executor.submit(
+                        worker_treinar_lote, cp, modelos, global_permutation
+                    )
                     for cp, modelos in lotes_cpu_dict.items()
                 ]
-                processar_resultados_futures(cpu_futures, "CPU-NATIVE", len(lotes_cpu_dict))
-            print("[INFO] Fase nativa da CPU finalizada. Iniciando CPU-STEAL (Roubo de Carga)...")
+                processar_resultados_futures(
+                    cpu_futures, "CPU-NATIVE", len(lotes_cpu_dict)
+                )
+            print(
+                "[INFO] Fase nativa da CPU finalizada. Iniciando CPU-STEAL (Roubo de Carga)..."
+            )
 
             # CPU Steal Phase
             lote_roubado = 1
@@ -445,20 +492,37 @@ def executar_bateria_teste(config_path):
                 except queue.Empty:
                     break
 
-                print(f"\n[CPU-STEAL LOTE {lote_roubado}] Carregando dataset e atacando {len(modelos)} modelos na memória RAM...")
-                X_train, y_train, X_val, y_val, X_test, y_test, feature_cols = joblib.load(cp)
+                print(
+                    f"\n[CPU-STEAL LOTE {lote_roubado}] Carregando dataset e atacando {len(modelos)} modelos na memória RAM..."
+                )
+                X_train, y_train, X_val, y_val, X_test, y_test, feature_cols = (
+                    joblib.load(cp)
+                )
                 fs_cache = {}
-                
+
                 with ThreadPoolExecutor(max_workers=13) as steal_executor:
                     steal_futures = [
                         steal_executor.submit(
                             worker_single_model,
-                            X_train, y_train, X_val, y_val, X_test, y_test, feature_cols,
-                            model_name, params, exp_id, global_permutation, fs_cache, force_cpu=True
+                            X_train,
+                            y_train,
+                            X_val,
+                            y_val,
+                            X_test,
+                            y_test,
+                            feature_cols,
+                            model_name,
+                            params,
+                            exp_id,
+                            global_permutation,
+                            fs_cache,
+                            force_cpu=True,
                         )
                         for model_name, params, exp_id in modelos
                     ]
-                    processar_resultados_futures(steal_futures, "CPU-STEAL", len(steal_futures))
+                    processar_resultados_futures(
+                        steal_futures, "CPU-STEAL", len(steal_futures)
+                    )
                 lote_roubado += 1
 
             print("[INFO] Steal Phase concluída. CPU ociosa.")
@@ -493,7 +557,7 @@ if __name__ == "__main__":
         caminho_json = sys.argv[1]
     else:
         # Carregamento autônomo sem necessidade de passagem de parâmetro
-        caminho_json = os.path.join(os.path.dirname(__file__), "config_experiment.json")
+        caminho_json = os.path.join(os.path.dirname(__file__), "config_experiment_bateria03.json")
         print(f"[SETUP] Nenhum parâmetro fornecido. Carregando padrão: {caminho_json}")
 
     executar_bateria_teste(caminho_json)
