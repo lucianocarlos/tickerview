@@ -1,0 +1,73 @@
+{
+    "bateria_id": "bateria_03",
+    "dataset": "dataset002",
+    "target_strategies": [
+        {"name": "directional_regime", "horizon_days": 5, "threshold": 0.01},
+        {"name": "directional_regime", "horizon_days": 10, "threshold": 0.02},
+        {"name": "directional_regime", "horizon_days": 21, "threshold": 0.03},
+        {"name": "outperformance", "horizon_days": 10, "threshold": 0.02},
+        {"name": "outperformance", "horizon_days": 21, "threshold": 0.03},
+        {"name": "volatility_regime", "horizon_days": 10, "threshold": 0.02}
+    ],
+    "split_configs": [
+        {"method": "temporal_holdout", "train_ratio": 0.70, "val_ratio": 0.15},
+        {"method": "tsp", "n_splits": 5},
+        {"method": "tsp", "n_splits": 10}
+    ],
+    "preprocessing": {
+        "inf_handling": ["replace_nan"],
+        "imputation": ["sector_median", "fill_zero"],
+        "outlier_handling": ["clip_99_1", "clip_95_5", "iqr_1_5"],
+        "scaling": ["robust", "standard"]
+    },
+    "models": [
+        {
+            "name": "xgboost",
+            "hyperparameters": {
+                "n_estimators": [100, 200, 400],
+                "max_depth": [3, 5, 7, 10],
+                "learning_rate": [0.01, 0.03, 0.05],
+                "subsample": [0.8, 1.0],
+                "colsample_bytree": [0.8, 1.0],
+                "reg_alpha": [0.0, 0.1, 1.0],
+                "reg_lambda": [1.0, 10.0]
+            }
+        },
+        {
+            "name": "lightgbm",
+            "hyperparameters": {
+                "n_estimators": [100, 200, 400],
+                "max_depth": [3, 5, 7, -1],
+                "learning_rate": [0.01, 0.03, 0.05],
+                "num_leaves": [31, 63, 127],
+                "subsample": [0.8, 1.0],
+                "colsample_bytree": [0.8, 1.0],
+                "reg_alpha": [0.0, 0.1],
+                "reg_lambda": [1.0, 10.0]
+            }
+        },
+        {
+            "name": "random_forest",
+            "hyperparameters": {
+                "n_estimators": [100, 200, 400],
+                "max_depth": [3, 5, 8],
+                "class_weight": ["balanced"]
+            }
+        },
+        {
+            "name": "mlp",
+            "hyperparameters": {
+                "hidden_layer_sizes": [[128, 64], [256, 128], [128, 64, 32]],
+                "learning_rate_init": [0.001, 0.0005],
+                "max_iter": [1000],
+                "activation": ["relu"],
+                "dropout_p": [0.2, 0.3],
+                "class_weight": ["balanced", null]
+            }
+        }
+    ],
+    "feature_selection": {
+        "top_k": [20, 40, null]
+    },
+    "max_workers": 6
+}

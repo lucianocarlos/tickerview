@@ -14,6 +14,14 @@ from indicadores import (
     calcular_DY,
     calcular_Retorno_Diario,
     calcular_Volatilidade,
+    calcular_Momentum,
+    calcular_Anomalia_Volume,
+    calcular_RSI,
+    calcular_MACD,
+    calcular_Bollinger_Width,
+    calcular_Alavancagem,
+    calcular_Margem_EBIT,
+    calcular_ZScore_Setorial
 )
 
 
@@ -134,6 +142,54 @@ def construir_tabela_mestre():
         df_mestre["DY_Calculado"] = calcular_DY(
             df_mestre["Total_Dividendos"], df_mestre["marketCap"]
         )
+
+    # 6. Momentum (1d, 5d, 10d, 21d, 63d)
+    if "Close" in df_mestre.columns:
+        for dias in [1, 5, 10, 21, 63]:
+            df_mestre[f"Momentum_{dias}d"] = df_mestre.groupby("ticker")["Close"].transform(
+                lambda x: calcular_Momentum(x, janela=dias)
+            )
+
+    # 7. Técnicos (RSI, MACD, Bollinger Width)
+    if "Close" in df_mestre.columns:
+        df_mestre["RSI_14d"] = df_mestre.groupby("ticker")["Close"].transform(
+            lambda x: calcular_RSI(x, janela=14)
+        )
+        df_mestre["MACD_Hist"] = df_mestre.groupby("ticker")["Close"].transform(
+            lambda x: calcular_MACD(x)
+        )
+        df_mestre["Bollinger_Width_21d"] = df_mestre.groupby("ticker")["Close"].transform(
+            lambda x: calcular_Bollinger_Width(x, janela=21)
+        )
+
+    # 8. Anomalia de Volume
+    if "Volume" in df_mestre.columns:
+        df_mestre["Volume_Anomaly_21d"] = df_mestre.groupby("ticker")["Volume"].transform(
+            lambda x: calcular_Anomalia_Volume(x, janela=21)
+        )
+
+    # 9. Ratios Financeiros Adicionais
+    if "Divida_Total" in df_mestre.columns and "Ativo_Total" in df_mestre.columns:
+        df_mestre["Alavancagem_Calculada"] = calcular_Alavancagem(
+            df_mestre["Divida_Total"], df_mestre["Ativo_Total"]
+        )
+    if "EBIT_Operacional" in df_mestre.columns and "Total Revenue" in df_mestre.columns:
+        df_mestre["Margem_EBIT_Calculada"] = calcular_Margem_EBIT(
+            df_mestre["EBIT_Operacional"], df_mestre["Total Revenue"]
+        )
+
+    # 10. Z-Score Cross-Sectional Setorial Diário
+    # Aplicar em algumas features numéricas importantes (ex: P_L_Calculado, ROE_Calculado)
+    if "sector" in df_mestre.columns and "Date" in df_mestre.columns:
+        # Só calcula se a feature existe
+        cross_sect_cols = ["P_L_Calculado", "P_VP_Calculado", "ROE_Calculado", "Momentum_21d", "Alavancagem_Calculada"]
+        for col in cross_sect_cols:
+            if col in df_mestre.columns:
+                # Agrupamos por data e então por setor (temos que passar a data tbm pro transform)
+                # O mais eficiente no pandas: groupby(['Date', 'sector']) e então tira o zscore.
+                df_mestre[f"{col}_zscore_setorial"] = df_mestre.groupby(['Date', 'sector'])[col].transform(
+                    lambda x: (x - x.mean()) / (x.std() + 1e-8)
+                )
 
     print(
         "O Pipeline de MLOps agora é responsável pela Limpeza Final (Nulos, Outliers, Scaling) para evitar Data Leakage."

@@ -42,7 +42,7 @@ DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 class PyTorchMLP(nn.Module):
     def __init__(
-        self, input_size, hidden_sizes=(100,), num_classes=2, activation="relu"
+        self, input_size, hidden_sizes=(100,), num_classes=2, activation="relu", dropout_p=0.3
     ):
         super().__init__()
         layers = []
@@ -58,7 +58,11 @@ class PyTorchMLP(nn.Module):
 
         for h in hidden_sizes:
             layers.append(nn.Linear(in_size, h))
+            if h > 1:
+                layers.append(nn.BatchNorm1d(h))
             layers.append(act_layer())
+            if dropout_p > 0:
+                layers.append(nn.Dropout(p=dropout_p))
             in_size = h
         layers.append(nn.Linear(in_size, num_classes))
         self.network = nn.Sequential(*layers)
@@ -77,6 +81,8 @@ class SklearnPyTorchMLPWrapper:
         max_iter=1000,
         learning_rate_init=0.001,
         weight_decay=0.0,
+        dropout_p=0.3,
+        class_weight=None,
         random_state=42,
         device=None,
         **kwargs,
@@ -86,6 +92,8 @@ class SklearnPyTorchMLPWrapper:
         self.max_iter = max_iter
         self.lr = learning_rate_init
         self.weight_decay = weight_decay
+        self.dropout_p = dropout_p
+        self.class_weight = class_weight
         self.random_state = random_state
         self.device = device if device is not None else DEVICE
         self.model = None
@@ -107,10 +115,17 @@ class SklearnPyTorchMLPWrapper:
         input_size = X_t.shape[1]
 
         self.model = PyTorchMLP(
-            input_size, self.hidden_layer_sizes, num_classes, self.activation
+            input_size, self.hidden_layer_sizes, num_classes, self.activation, self.dropout_p
         ).to(self.device)
 
-        criterion = nn.CrossEntropyLoss()
+        criterion_weight = None
+        if self.class_weight == "balanced":
+            class_counts = torch.bincount(y_t)
+            total_samples = len(y_t)
+            weights = total_samples / (num_classes * class_counts.float())
+            criterion_weight = weights.to(self.device)
+
+        criterion = nn.CrossEntropyLoss(weight=criterion_weight)
         optimizer = optim.Adam(
             self.model.parameters(), lr=self.lr, weight_decay=self.weight_decay
         )
@@ -265,10 +280,15 @@ class GPUVotingClassifier:
 
 try:
     from xgboost import XGBClassifier
-
     XGBOOST_AVAILABLE = True
 except ImportError:
     XGBOOST_AVAILABLE = False
+
+try:
+    from lightgbm import LGBMClassifier
+    LIGHTGBM_AVAILABLE = True
+except ImportError:
+    LIGHTGBM_AVAILABLE = False
 
 
 def gerar_target(df, strategy, config_target):
@@ -591,6 +611,10 @@ def preprocessar_dados(
         "Low",
         "Close",
         "Volume",
+        "Stock Splits",
+        "Retorno",
+        "Dividends",
+        "Dividends Payable"
     ] + cols_to_drop
     cols_to_exclude = [col for col in metadata_cols if col in df_target.columns]
     feature_cols = [
@@ -727,6 +751,13 @@ def treinar_e_avaliar_modelo_pre_processado(
         model = SklearnPyTorchMLPWrapper(device=local_device, **clean_hparams)
     elif model_name == "logistic_regression":
         model = SklearnPyTorchLogisticRegressionWrapper(device=local_device, **clean_hparams)
+    elif model_name == "lightgbm":
+        if LIGHTGBM_AVAILABLE:
+            if torch.cuda.is_available() and local_device != "cpu":
+                clean_hparams["device"] = "gpu"
+            model = LGBMClassifier(n_jobs=1, **clean_hparams)
+        else:
+            raise ValueError("LightGBM não está instalado.")
     elif model_name == "xgboost":
         # Ativação nativa da GPU para o XGBoost
         if torch.cuda.is_available() and local_device != "cpu":
