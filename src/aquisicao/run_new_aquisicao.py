@@ -63,7 +63,6 @@ if __name__ == "__main__":
     scripts_aquisicao = [
         current_dir / "extracao_cvm.py",
         current_dir / "extracao_fundamentos.py",
-        current_dir / "extracao_metadados.py",
         current_dir / "extracao_opcoes.py",
         current_dir / "extracao_precos.py",
     ]

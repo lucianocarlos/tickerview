@@ -107,7 +107,7 @@ class SklearnPyTorchMLPWrapper:
             X.values if isinstance(X, pd.DataFrame) else X, dtype=torch.float32
         ).to(self.device)
         y_t = torch.tensor(
-            y.values if isinstance(y, pd.Series) else y, dtype=torch.long
+            y.values if isinstance(y, pd.Series) else y, dtype=torch.int64
         ).to(self.device)
 
         self.classes_ = np.unique(y_t.cpu().numpy())
@@ -163,6 +163,10 @@ class SklearnPyTorchMLPWrapper:
             _, predicted = torch.max(outputs.data, 1)
         return predicted.cpu().numpy()
 
+    def score(self, X, y):
+        from sklearn.metrics import accuracy_score
+        return accuracy_score(y, self.predict(X))
+
 
 class PyTorchKNNWrapper:
     """KNN 100% otimizado via Pytorch (MUITO MAIS RÁPIDO QUE CPU)"""
@@ -182,7 +186,7 @@ class PyTorchKNNWrapper:
             X.values if isinstance(X, pd.DataFrame) else X, dtype=torch.float32
         ).to(self.device)
         self.y_train_t = torch.tensor(
-            y.values if isinstance(y, pd.Series) else y, dtype=torch.long
+            y.values if isinstance(y, pd.Series) else y, dtype=torch.int64
         ).to(self.device)
         self.num_classes = len(torch.unique(self.y_train_t))
         return self
@@ -220,6 +224,10 @@ class PyTorchKNNWrapper:
             predictions.append(batch_preds.cpu().numpy())
 
         return np.concatenate(predictions)
+
+    def score(self, X, y):
+        from sklearn.metrics import accuracy_score
+        return accuracy_score(y, self.predict(X))
 
 
 class SklearnPyTorchLogisticRegressionWrapper(SklearnPyTorchMLPWrapper):
@@ -349,7 +357,8 @@ def gerar_target(df, strategy, config_target):
             lambda x: x.rolling(window=horizon).min().shift(-horizon)
         )
         df["Drawdown_Futuro"] = (df["Future_Min_Close"] / df["Close"]) - 1
-        threshold_dd = -0.20
+        # Garante que o threshold seja aplicado de forma negativa (queda)
+        threshold_dd = -abs(threshold)
         df["target"] = (df["Drawdown_Futuro"] < threshold_dd).astype(float)
         df.loc[df["Future_Min_Close"].isna(), "target"] = np.nan
         cols_to_drop = ["Future_Min_Close", "Drawdown_Futuro"]
@@ -367,7 +376,9 @@ def gerar_target(df, strategy, config_target):
         df["Future_Drawdown"] = (df["Future_Min_Close"] - df["Close"]) / df[
             "Close"
         ].replace(0, 1)
-        cond_crash = df["Future_Drawdown"] < -0.10
+        # Aplica o threshold dinâmico do JSON garantindo sinal negativo
+        threshold_crash = -abs(threshold)
+        cond_crash = df["Future_Drawdown"] < threshold_crash
         df["target"] = (cond_div & cond_crash).astype(int)
         df.loc[df["Future_Min_Close"].isna(), "target"] = np.nan
         cols_to_drop = ["Future_Min_Close", "Future_Drawdown"]
@@ -506,9 +517,23 @@ def imputar_nulos_granular(df_train, df_val, df_test, feature_cols, imp_dict):
                     medians.loc[s, c]
                 )
         global_medians = train_imp[cols_f].median()
-        train_imp[cols_f] = train_imp[cols_f].fillna(global_medians)
-        val_imp[cols_f] = val_imp[cols_f].fillna(global_medians)
-        test_imp[cols_f] = test_imp[cols_f].fillna(global_medians)
+    elif strat_financas == "ticker_median":
+        medians = train_imp.groupby("ticker")[cols_f].median()
+        for s in medians.index:
+            for c in cols_f:
+                train_imp.loc[(train_imp["ticker"] == s) & (train_imp[c].isna()), c] = (
+                    medians.loc[s, c]
+                )
+                val_imp.loc[(val_imp["ticker"] == s) & (val_imp[c].isna()), c] = (
+                    medians.loc[s, c]
+                )
+                test_imp.loc[(test_imp["ticker"] == s) & (test_imp[c].isna()), c] = (
+                    medians.loc[s, c]
+                )
+        global_medians = train_imp[cols_f].median()
+        train_imp[cols_f] = train_imp[cols_f].fillna(global_medians).fillna(0)
+        val_imp[cols_f] = val_imp[cols_f].fillna(global_medians).fillna(0)
+        test_imp[cols_f] = test_imp[cols_f].fillna(global_medians).fillna(0)
     else:
         # Fallback de Segurança Anti-Crash
         train_imp[cols_f] = train_imp[cols_f].fillna(0)
@@ -524,9 +549,9 @@ def imputar_nulos_granular(df_train, df_val, df_test, feature_cols, imp_dict):
         test_imp[cols_e] = test_imp[cols_e].fillna(0)
     elif strat_estaticos == "global_median":
         global_medians = train_imp[cols_e].median()
-        train_imp[cols_e] = train_imp[cols_e].fillna(global_medians)
-        val_imp[cols_e] = val_imp[cols_e].fillna(global_medians)
-        test_imp[cols_e] = test_imp[cols_e].fillna(global_medians)
+        train_imp[cols_e] = train_imp[cols_e].fillna(global_medians).fillna(0)
+        val_imp[cols_e] = val_imp[cols_e].fillna(global_medians).fillna(0)
+        test_imp[cols_e] = test_imp[cols_e].fillna(global_medians).fillna(0)
     elif strat_estaticos == "sector_median":
         medians = train_imp.groupby("sector")[cols_e].median()
         for s in medians.index:
@@ -541,9 +566,26 @@ def imputar_nulos_granular(df_train, df_val, df_test, feature_cols, imp_dict):
                     medians.loc[s, c]
                 )
         global_medians = train_imp[cols_e].median()
-        train_imp[cols_e] = train_imp[cols_e].fillna(global_medians)
-        val_imp[cols_e] = val_imp[cols_e].fillna(global_medians)
-        test_imp[cols_e] = test_imp[cols_e].fillna(global_medians)
+        train_imp[cols_e] = train_imp[cols_e].fillna(global_medians).fillna(0)
+        val_imp[cols_e] = val_imp[cols_e].fillna(global_medians).fillna(0)
+        test_imp[cols_e] = test_imp[cols_e].fillna(global_medians).fillna(0)
+    elif strat_estaticos == "ticker_median":
+        medians = train_imp.groupby("ticker")[cols_e].median()
+        for s in medians.index:
+            for c in cols_e:
+                train_imp.loc[(train_imp["ticker"] == s) & (train_imp[c].isna()), c] = (
+                    medians.loc[s, c]
+                )
+                val_imp.loc[(val_imp["ticker"] == s) & (val_imp[c].isna()), c] = (
+                    medians.loc[s, c]
+                )
+                test_imp.loc[(test_imp["ticker"] == s) & (test_imp[c].isna()), c] = (
+                    medians.loc[s, c]
+                )
+        global_medians = train_imp[cols_e].median()
+        train_imp[cols_e] = train_imp[cols_e].fillna(global_medians).fillna(0)
+        val_imp[cols_e] = val_imp[cols_e].fillna(global_medians).fillna(0)
+        test_imp[cols_e] = test_imp[cols_e].fillna(global_medians).fillna(0)
     else:
         # Fallback de Segurança Anti-Crash
         train_imp[cols_e] = train_imp[cols_e].fillna(0)
@@ -571,9 +613,26 @@ def imputar_nulos_granular(df_train, df_val, df_test, feature_cols, imp_dict):
                     medians.loc[s, c]
                 )
         global_medians = train_imp[cols_yf].median()
-        train_imp[cols_yf] = train_imp[cols_yf].fillna(global_medians)
-        val_imp[cols_yf] = val_imp[cols_yf].fillna(global_medians)
-        test_imp[cols_yf] = test_imp[cols_yf].fillna(global_medians)
+        train_imp[cols_yf] = train_imp[cols_yf].fillna(global_medians).fillna(0)
+        val_imp[cols_yf] = val_imp[cols_yf].fillna(global_medians).fillna(0)
+        test_imp[cols_yf] = test_imp[cols_yf].fillna(global_medians).fillna(0)
+    elif strat_yf == "ticker_median":
+        medians = train_imp.groupby("ticker")[cols_yf].median()
+        for s in medians.index:
+            for c in cols_yf:
+                train_imp.loc[(train_imp["ticker"] == s) & (train_imp[c].isna()), c] = (
+                    medians.loc[s, c]
+                )
+                val_imp.loc[(val_imp["ticker"] == s) & (val_imp[c].isna()), c] = (
+                    medians.loc[s, c]
+                )
+                test_imp.loc[(test_imp["ticker"] == s) & (test_imp[c].isna()), c] = (
+                    medians.loc[s, c]
+                )
+        global_medians = train_imp[cols_yf].median()
+        train_imp[cols_yf] = train_imp[cols_yf].fillna(global_medians).fillna(0)
+        val_imp[cols_yf] = val_imp[cols_yf].fillna(global_medians).fillna(0)
+        test_imp[cols_yf] = test_imp[cols_yf].fillna(global_medians).fillna(0)
     else:
         # Fallback de Segurança Anti-Crash
         train_imp[cols_yf] = train_imp[cols_yf].fillna(0)
@@ -755,6 +814,15 @@ def treinar_e_avaliar_modelo_pre_processado(
         if LIGHTGBM_AVAILABLE:
             if torch.cuda.is_available() and local_device != "cpu":
                 clean_hparams["device"] = "gpu"
+            if "verbose" not in clean_hparams:
+                clean_hparams["verbose"] = -1
+            clean_hparams["force_row_wise"] = True
+            
+            # Correção vital do LightGBM: ele ignora o 'subsample' se o 'subsample_freq' for 0 (padrão)
+            if "subsample" in clean_hparams and clean_hparams["subsample"] < 1.0:
+                if "subsample_freq" not in clean_hparams or clean_hparams["subsample_freq"] == 0:
+                    clean_hparams["subsample_freq"] = 1
+                    
             model = LGBMClassifier(n_jobs=1, **clean_hparams)
         else:
             raise ValueError("LightGBM não está instalado.")
@@ -763,6 +831,8 @@ def treinar_e_avaliar_modelo_pre_processado(
         if torch.cuda.is_available() and local_device != "cpu":
             clean_hparams["tree_method"] = "hist"
             clean_hparams["device"] = "cuda"
+        if "verbosity" not in clean_hparams:
+            clean_hparams["verbosity"] = 0
         if XGBOOST_AVAILABLE:
             model = XGBClassifier(n_jobs=1, **clean_hparams)
         else:

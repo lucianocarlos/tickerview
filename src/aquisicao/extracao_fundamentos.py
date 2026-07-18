@@ -29,6 +29,7 @@ def extracao_fundamentos():
     
     info_output = os.path.join(output_dir, "fundamentos_info.parquet")
     balanco_output = os.path.join(output_dir, "fundamentos_balanco.parquet")
+    metadados_output = os.path.join(output_dir, "metadados.parquet")
 
     # 1. Leitura das companhias
     try:
@@ -43,9 +44,10 @@ def extracao_fundamentos():
 
     lista_info = []
     lista_balancos = []
+    lista_metadados = []
 
     for idx, ticker in enumerate(tickers):
-        print(f"[{idx + 1}/{len(tickers)}] Baixando fundamentos de {ticker}...")
+        print(f"[{idx + 1}/{len(tickers)}] Baixando fundamentos e metadados de {ticker}...")
         time.sleep(DOWNLOAD_DELAY)
         
         try:
@@ -61,17 +63,49 @@ def extracao_fundamentos():
                 # Converte o valor para string para evitar conflito de tipos no Parquet (ex: "Infinity")
                 df_info['Valor'] = df_info['Valor'].astype(str)
                 lista_info.append(df_info)
+                
+                # --- Extração de Metadados (substituindo extracao_metadados.py) ---
+                market_cap = info_data.get("marketCap")
+                sector = info_data.get("sector")
+                industry = info_data.get("industry")
+                beta = info_data.get("beta")
+
+                if market_cap is None:
+                    tamanho_categoria = "Desconhecido"
+                elif market_cap >= 10_000_000_000:
+                    tamanho_categoria = "Large Cap"
+                elif market_cap >= 2_000_000_000:
+                    tamanho_categoria = "Mid Cap"
+                else:
+                    tamanho_categoria = "Small Cap"
+
+                metadata = {
+                    "ticker": ticker,
+                    "sector": sector,
+                    "industry": industry,
+                    "marketCap": market_cap,
+                    "beta": beta,
+                    "tamanho_categoria": tamanho_categoria,
+                }
+                lista_metadados.append(metadata)
             
-            # --- Extração do Balanço Patrimonial (Balance Sheet) ---
-            # Para extrair outros como financials e cashflow, podemos usar acao.financials, acao.cashflow
+            # --- Extração do Balanço Patrimonial (Anual e Trimestral) ---
             df_bs = acao.balance_sheet
+            df_qbs = acao.quarterly_balance_sheet
+            
             if not df_bs.empty:
-                # Transpõe para que a data vire coluna e reseta o índice (nome da métrica contábil)
                 df_bs = df_bs.T.reset_index().rename(columns={'index': 'Data_Referencia'})
-                # Derrete (melt) o dataframe para o formato longo (Tidy)
                 df_bs_long = df_bs.melt(id_vars=['Data_Referencia'], var_name='Metrica', value_name='Valor')
                 df_bs_long['ticker'] = ticker
+                df_bs_long['Tipo_Balanco'] = 'Anual'
                 lista_balancos.append(df_bs_long)
+                
+            if not df_qbs.empty:
+                df_qbs = df_qbs.T.reset_index().rename(columns={'index': 'Data_Referencia'})
+                df_qbs_long = df_qbs.melt(id_vars=['Data_Referencia'], var_name='Metrica', value_name='Valor')
+                df_qbs_long['ticker'] = ticker
+                df_qbs_long['Tipo_Balanco'] = 'Trimestral'
+                lista_balancos.append(df_qbs_long)
                 
         except Exception as e:
             print(f"Erro ao processar {ticker}: {e}")
@@ -90,6 +124,12 @@ def extracao_fundamentos():
              df_balancos_final["Data_Referencia"] = df_balancos_final["Data_Referencia"].dt.tz_localize(None)
         df_balancos_final.to_parquet(balanco_output, index=False)
         print(f"Arquivo de balanços salvo: {balanco_output}")
+
+    # 4. Salva Metadados em Parquet
+    if lista_metadados:
+        df_metadados_final = pd.DataFrame(lista_metadados)
+        df_metadados_final.to_parquet(metadados_output, index=False)
+        print(f"Arquivo de metadados salvo: {metadados_output}")
 
 if __name__ == "__main__":
     extracao_fundamentos()

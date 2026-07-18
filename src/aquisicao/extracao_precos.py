@@ -31,12 +31,21 @@ def process_yfinance_data(df, ticker=None):
         if "ticker" not in df.columns and ticker is not None:
             df["ticker"] = ticker
 
+    # Para evitar divergências de escala (pois YFinance ajusta o Close para dividendos no 'Adj Close' 
+    # mas não ajusta Open/High/Low), nós vamos calcular o fator de ajuste e aplicar em todas.
+    if "Adj Close" in df.columns and "Close" in df.columns:
+        fator_ajuste = df["Adj Close"] / df["Close"].replace(0, 1)
+        df["Open"] = df["Open"] * fator_ajuste
+        df["High"] = df["High"] * fator_ajuste
+        df["Low"] = df["Low"] * fator_ajuste
+        # O Close oficial agora passa a ser o Adj Close perfeitamente ajustado
+        df["Close"] = df["Adj Close"]
+
     col_mapping = {
         "Open": "Open",
         "High": "High",
         "Low": "Low",
         "Close": "Close",
-        "Adj Close": "Adj_Close",
         "Volume": "Volume",
     }
     df = df.rename(columns=col_mapping)
@@ -47,7 +56,6 @@ def process_yfinance_data(df, ticker=None):
         "High",
         "Low",
         "Close",
-        "Adj_Close",
         "Volume",
     ]
     return df[[c for c in cols_to_keep if c in df.columns]]
@@ -200,8 +208,4 @@ def fetch_prices():
 
 
 if __name__ == "__main__":
-    # fetch_prices()
-    t = yf.download(
-        "CSMG3.SA", start="2026-06-23", end="2026-06-24", progress=False, keepna=True
-    )
-    print(t)
+    fetch_prices()

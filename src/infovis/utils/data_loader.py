@@ -23,7 +23,7 @@ def load_all_metrics():
 
     # Varre as pastas dentro do datalake
     for folder in os.listdir(DATALAKE_DIR):
-        db_path = os.path.join(DATALAKE_DIR, folder, "datalake.db")
+        db_path = os.path.join(DATALAKE_DIR, folder, f"{folder}.db")
         if not os.path.isfile(db_path):
             continue
 
@@ -102,7 +102,7 @@ def load_xai_metadata(model_id, dataset_version):
     """
     Busca o array de Feature Importances injetado no SQLite para um modelo e bateria específicos.
     """
-    db_path = os.path.join(DATALAKE_DIR, dataset_version, "datalake.db")
+    db_path = os.path.join(DATALAKE_DIR, dataset_version, f"{dataset_version}.db")
     if not os.path.exists(db_path):
         return {}
 

@@ -188,11 +188,11 @@ def executar_bateria_teste(config_path):
 
     # O nome do Datalake vem explicitamente de dentro do JSON (ou usa o nome do arquivo se não existir)
     file_name_fallback = os.path.basename(config_path).replace(".json", "")
-    battery_name = config.get("datalake_name", file_name_fallback)
+    battery_name = config.get("datalake_name", config.get("bateria_id", file_name_fallback))
 
     project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 
-    dynamic_db_path = os.path.join(project_root, "data", "datalake", battery_name, "datalake.db")
+    dynamic_db_path = os.path.join(project_root, "data", "datalake", battery_name, f"{battery_name}.db")
     db_manager.set_db_path(dynamic_db_path)
 
     # Verifica se já existe um checkpoint Pai (a própria Bateria)
@@ -245,13 +245,15 @@ def executar_bateria_teste(config_path):
         df_raw.to_parquet(raw_cache_path)
 
         split_strategies = config.get(
-            "split_strategies", [{"method": "temporal_holdout", "train_ratio": 0.7}]
+            "split_configs", [{"method": "temporal_holdout", "train_ratio": 0.7}]
         )
         target_strategies = config.get("target_strategies", ["outperformance"])
-        inf_strategies = config.get("inf_handling_strategies", ["replace_nan"])
-        imputation_strategies = config.get("imputation_strategies", ["fill_zero"])
-        outlier_methods = config.get("outlier_handling_methods", ["none"])
-        scaling_methods = config.get("scaling_methods", ["none"])
+        
+        prep = config.get("preprocessing", {})
+        inf_strategies = prep.get("inf_handling", ["replace_nan"])
+        imputation_strategies = prep.get("imputation", ["fill_zero"])
+        outlier_methods = prep.get("outlier_handling", ["none"])
+        scaling_methods = prep.get("scaling", ["none"])
         models_config = config.get("models", {})
         target_def = config.get(
             "target_definition", {"horizon_days": 10, "threshold": 0.02}
@@ -263,18 +265,27 @@ def executar_bateria_teste(config_path):
         tarefas_gpu = []
         exp_ids_to_update = set()
 
-        for strategy in target_strategies:
+        for strategy_item in target_strategies:
+            if isinstance(strategy_item, dict):
+                strategy_name = strategy_item.get("name")
+                current_target_def = {k: v for k, v in strategy_item.items() if k != "name"}
+                db_target_strategy = strategy_item
+            else:
+                strategy_name = strategy_item
+                current_target_def = target_def
+                db_target_strategy = strategy_item
+
             for split_config in split_strategies:
                 for inf_strat in inf_strategies:
                     for imp_strategy in imputation_strategies:
                         for out_method in outlier_methods:
                             for scale_method in scaling_methods:
                                 print(
-                                    f"\n[EXPERIMENT] Target: {strategy} | Inf: {inf_strat} | Imp: {imp_strategy} | Out: {out_method} | Scale: {scale_method}"
+                                    f"\n[EXPERIMENT] Target: {db_target_strategy} | Inf: {inf_strat} | Imp: {imp_strategy} | Out: {out_method} | Scale: {scale_method}"
                                 )
 
                                 experiment_config = {
-                                    "target_definition": target_def,
+                                    "target_definition": current_target_def,
                                     "split_config": split_config,
                                     "inf_handling_strategy": inf_strat,
                                     "imputation_strategy": imp_strategy,
@@ -287,7 +298,7 @@ def executar_bateria_teste(config_path):
                                     battery_id=battery_id,
                                     dataset_id=dataset_id,
                                     task_type="classification",
-                                    target_strategy=strategy,
+                                    target_strategy=db_target_strategy,
                                     experiment_config=experiment_config,
                                 )
                                 exp_ids_to_update.add(exp_id)
@@ -299,8 +310,8 @@ def executar_bateria_teste(config_path):
                                 prep_tasks.append(
                                     (
                                         raw_cache_path,
-                                        strategy,
-                                        target_def,
+                                        strategy_name,
+                                        current_target_def,
                                         split_config,
                                         inf_strat,
                                         imp_strategy,
@@ -327,7 +338,7 @@ def executar_bateria_teste(config_path):
 
                                     for params in grid:
                                         hparams_str = (
-                                            json.dumps(params, ensure_ascii=False)
+                                            json.dumps(params, ensure_ascii=False, sort_keys=True)
                                             if isinstance(params, dict)
                                             else params
                                         )
@@ -348,6 +359,8 @@ def executar_bateria_teste(config_path):
                                                 "mlp",
                                                 "logistic_regression",
                                                 "voting_classifier",
+                                                "xgboost",
+                                                "lightgbm",
                                             ]:
                                                 tarefas_gpu.append(task_tuple)
                                             else:
@@ -454,32 +467,42 @@ def executar_bateria_teste(config_path):
             print(
                 f"\n[INFO] INICIANDO Fila de GPU: {len(tarefas_gpu)} modelos na base..."
             )
-            with ProcessPoolExecutor(max_workers=1) as executor:
+            with ProcessPoolExecutor(max_workers=3) as executor:
                 while not queue_gpu.empty():
                     try:
                         cp, modelos = queue_gpu.get_nowait()
                     except queue.Empty:
                         break
 
-                    future = executor.submit(
-                        worker_treinar_lote, cp, modelos, global_permutation
-                    )
-                    processar_resultados_futures([future], "GPU-NATIVE", 1)
+                    gpu_futures = []
+                    chunk_size = 50
+                    for i in range(0, len(modelos), chunk_size):
+                        chunk = modelos[i:i+chunk_size]
+                        gpu_futures.append(
+                            executor.submit(
+                                worker_treinar_lote, cp, chunk, global_permutation
+                            )
+                        )
+                    processar_resultados_futures(gpu_futures, "GPU-NATIVE", len(gpu_futures))
             print("[INFO] Fila de GPU finalizada.")
 
         def run_cpu():
             print(
                 f"\n[INFO] INICIANDO Fila de CPU: {len(tarefas_cpu)} modelos nativos..."
             )
-            with ProcessPoolExecutor(max_workers=3) as executor:
-                cpu_futures = [
-                    executor.submit(
-                        worker_treinar_lote, cp, modelos, global_permutation
-                    )
-                    for cp, modelos in lotes_cpu_dict.items()
-                ]
+            with ProcessPoolExecutor(max_workers=13) as executor:
+                cpu_futures = []
+                for cp, modelos in lotes_cpu_dict.items():
+                    chunk_size = 50
+                    for i in range(0, len(modelos), chunk_size):
+                        chunk = modelos[i:i+chunk_size]
+                        cpu_futures.append(
+                            executor.submit(
+                                worker_treinar_lote, cp, chunk, global_permutation
+                            )
+                        )
                 processar_resultados_futures(
-                    cpu_futures, "CPU-NATIVE", len(lotes_cpu_dict)
+                    cpu_futures, "CPU-NATIVE", len(cpu_futures)
                 )
             print(
                 "[INFO] Fase nativa da CPU finalizada. Iniciando CPU-STEAL (Roubo de Carga)..."
@@ -547,10 +570,71 @@ def executar_bateria_teste(config_path):
 
     # FECHAMENTO DA BATERIA GLOBAL
     battery_total_time = time.time() - battery_start_time
-    db_manager.update_battery_time(battery_id, battery_total_time)
+    db_manager.finish_battery(battery_id, battery_total_time)
     print(
         f"\n[SUCESSO ABSOLUTO] Bateria Mãe (ID: {battery_id}) encerrada com sucesso total em {battery_total_time:.1f} segundos!"
     )
+    
+    # ---------------------------------------------------------
+    # SUMÁRIO FINAL DA BATERIA
+    # ---------------------------------------------------------
+    try:
+        from datetime import datetime, timedelta
+        conn = db_manager.get_connection()
+        
+        # Datetimes
+        cur = conn.cursor()
+        cur.execute("SELECT created_at, finished_at FROM batteries WHERE id = ?", (battery_id,))
+        row = cur.fetchone()
+        dt_start = row[0] if row else "?"
+        dt_end = row[1] if row else "?"
+        
+        time_str = str(timedelta(seconds=int(battery_total_time)))
+        
+        # Número de modelos
+        cur.execute("SELECT COUNT(id) FROM models WHERE experiment_id IN (SELECT id FROM experiments WHERE battery_id = ?)", (battery_id,))
+        num_models = cur.fetchone()[0]
+        
+        # Max F1 per target
+        df_tgt = pd.read_sql(f"""
+            SELECT e.target_strategy, MAX(mc.test_f1_macro) as max_f1
+            FROM models m
+            JOIN metrics_classification mc ON m.id = mc.model_id
+            JOIN experiments e ON m.experiment_id = e.id
+            WHERE e.battery_id = {battery_id}
+            GROUP BY e.target_strategy
+        """, conn)
+        
+        # Max F1 per estimator
+        df_est = pd.read_sql(f"""
+            SELECT m.model_name, MAX(mc.test_f1_macro) as max_f1
+            FROM models m
+            JOIN metrics_classification mc ON m.id = mc.model_id
+            JOIN experiments e ON m.experiment_id = e.id
+            WHERE e.battery_id = {battery_id}
+            GROUP BY m.model_name
+        """, conn)
+        
+        print("\n" + "="*60)
+        print("               RELATÓRIO FINAL DA BATERIA")
+        print("="*60)
+        print(f"Data/Hora Início:     {dt_start}")
+        print(f"Data/Hora Término:    {dt_end}")
+        print(f"Tempo Total Gasto:    {time_str}")
+        print(f"Total de Modelos:     {num_models}")
+        print("\n--- F1 Score Máximo (Por Target) ---")
+        for _, r in df_tgt.iterrows():
+            tgt_name = json.loads(r['target_strategy']).get('name') if '{' in r['target_strategy'] else r['target_strategy']
+            print(f" {tgt_name:<30} | {r['max_f1']:.4f}")
+        
+        print("\n--- F1 Score Máximo (Por Estimador) ---")
+        for _, r in df_est.iterrows():
+            print(f" {r['model_name']:<30} | {r['max_f1']:.4f}")
+            
+        print("="*60 + "\n")
+        
+    except Exception as e:
+        print(f"[AVISO] Não foi possível gerar o relatório final: {e}")
 
 
 if __name__ == "__main__":

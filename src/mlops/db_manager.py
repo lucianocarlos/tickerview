@@ -11,10 +11,10 @@ def set_db_path(new_path):
 
 def _init_db(conn):
     cur = conn.cursor()
-    cur.execute('''CREATE TABLE IF NOT EXISTS datasets (id INTEGER PRIMARY KEY AUTOINCREMENT, version_hash TEXT NOT NULL UNIQUE, features_count INTEGER, rows_count INTEGER, generation_parameters TEXT, created_at DATETIME DEFAULT CURRENT_TIMESTAMP)''')
-    cur.execute('''CREATE TABLE IF NOT EXISTS batteries (id INTEGER PRIMARY KEY AUTOINCREMENT, battery_name TEXT, global_config TEXT, elapsed_time_sec FLOAT, created_at DATETIME DEFAULT CURRENT_TIMESTAMP)''')
-    cur.execute('''CREATE TABLE IF NOT EXISTS experiments (id INTEGER PRIMARY KEY AUTOINCREMENT, battery_id INTEGER NOT NULL, dataset_id INTEGER NOT NULL, task_type TEXT NOT NULL, target_strategy TEXT, experiment_config TEXT, elapsed_time_sec FLOAT, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, FOREIGN KEY (battery_id) REFERENCES batteries (id), FOREIGN KEY (dataset_id) REFERENCES datasets (id))''')
-    cur.execute('''CREATE TABLE IF NOT EXISTS models (id INTEGER PRIMARY KEY AUTOINCREMENT, experiment_id INTEGER NOT NULL, model_name TEXT NOT NULL, hyperparameters TEXT, execution_time_sec FLOAT, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, FOREIGN KEY (experiment_id) REFERENCES experiments (id))''')
+    cur.execute('''CREATE TABLE IF NOT EXISTS datasets (id INTEGER PRIMARY KEY AUTOINCREMENT, version_hash TEXT NOT NULL UNIQUE, features_count INTEGER, rows_count INTEGER, generation_parameters TEXT, created_at DATETIME DEFAULT (datetime('now', 'localtime')))''')
+    cur.execute('''CREATE TABLE IF NOT EXISTS batteries (id INTEGER PRIMARY KEY AUTOINCREMENT, battery_name TEXT, global_config TEXT, elapsed_time_sec FLOAT, created_at DATETIME DEFAULT (datetime('now', 'localtime')), finished_at DATETIME)''')
+    cur.execute('''CREATE TABLE IF NOT EXISTS experiments (id INTEGER PRIMARY KEY AUTOINCREMENT, battery_id INTEGER NOT NULL, dataset_id INTEGER NOT NULL, task_type TEXT NOT NULL, target_strategy TEXT, experiment_config TEXT, elapsed_time_sec FLOAT, created_at DATETIME DEFAULT (datetime('now', 'localtime')), FOREIGN KEY (battery_id) REFERENCES batteries (id), FOREIGN KEY (dataset_id) REFERENCES datasets (id))''')
+    cur.execute('''CREATE TABLE IF NOT EXISTS models (id INTEGER PRIMARY KEY AUTOINCREMENT, experiment_id INTEGER NOT NULL, model_name TEXT NOT NULL, hyperparameters TEXT, execution_time_sec FLOAT, created_at DATETIME DEFAULT (datetime('now', 'localtime')), FOREIGN KEY (experiment_id) REFERENCES experiments (id))''')
     cur.execute('''CREATE TABLE IF NOT EXISTS metrics_classification (model_id INTEGER PRIMARY KEY, val_accuracy FLOAT, val_f1_macro FLOAT, test_accuracy FLOAT, test_f1_macro FLOAT, test_f1_weighted FLOAT, test_precision_macro FLOAT, test_recall_macro FLOAT, confusion_matrix TEXT, FOREIGN KEY (model_id) REFERENCES models (id))''')
     cur.execute('''CREATE TABLE IF NOT EXISTS metrics_clustering (model_id INTEGER PRIMARY KEY, silhouette_score FLOAT, davies_bouldin FLOAT, FOREIGN KEY (model_id) REFERENCES models (id))''')
     cur.execute('''CREATE TABLE IF NOT EXISTS metrics_association (model_id INTEGER PRIMARY KEY, support_avg FLOAT, confidence_avg FLOAT, FOREIGN KEY (model_id) REFERENCES models (id))''')
@@ -84,17 +84,31 @@ def update_battery_time(battery_id, elapsed_time_sec):
     conn.commit()
     conn.close()
 
+def finish_battery(battery_id, elapsed_time_sec):
+    """Atualiza o tempo total e marca o término da bateria (finished_at) com a hora local."""
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute('''
+        UPDATE batteries 
+        SET elapsed_time_sec = ?, 
+            finished_at = datetime('now', 'localtime') 
+        WHERE id = ?
+    ''', (elapsed_time_sec, battery_id))
+    conn.commit()
+    conn.close()
+
 def get_or_create_experiment(battery_id, dataset_id, task_type, target_strategy, experiment_config):
     """Retorna o experimento se já existir com a mesma configuração exata, ou cria novo (Checkpoint Filho)."""
     conn = get_connection()
     cur = conn.cursor()
     
     config_str = json.dumps(experiment_config, ensure_ascii=False) if isinstance(experiment_config, dict) else experiment_config
+    target_strategy_str = json.dumps(target_strategy, ensure_ascii=False) if isinstance(target_strategy, dict) else target_strategy
     
     cur.execute('''
         SELECT id FROM experiments 
         WHERE battery_id = ? AND dataset_id = ? AND task_type = ? AND target_strategy = ? AND experiment_config = ?
-    ''', (battery_id, dataset_id, task_type, target_strategy, config_str))
+    ''', (battery_id, dataset_id, task_type, target_strategy_str, config_str))
     
     row = cur.fetchone()
     if row:
@@ -103,7 +117,7 @@ def get_or_create_experiment(battery_id, dataset_id, task_type, target_strategy,
         cur.execute('''
             INSERT INTO experiments (battery_id, dataset_id, task_type, target_strategy, experiment_config)
             VALUES (?, ?, ?, ?, ?)
-        ''', (battery_id, dataset_id, task_type, target_strategy, config_str))
+        ''', (battery_id, dataset_id, task_type, target_strategy_str, config_str))
         exp_id = cur.lastrowid
         conn.commit()
         

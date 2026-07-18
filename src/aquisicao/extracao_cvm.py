@@ -68,6 +68,12 @@ def fetch_cvm():
                 anos_faltantes = [
                     ano for ano in anos_alvo if ano not in anos_existentes
                 ]
+                # FORÇAR reprocessamento do ano corrente e do ano anterior (garantir relatórios recentes)
+                current_year = pd.Timestamp.now().year
+                if current_year not in anos_faltantes and current_year in anos_alvo:
+                    anos_faltantes.append(current_year)
+                if (current_year - 1) not in anos_faltantes and (current_year - 1) in anos_alvo:
+                    anos_faltantes.append(current_year - 1)
 
                 # 2) Verificar se existem novas empresas no universe.json que não estão na base
                 df_existente["cnpj_clean"] = df_existente["CNPJ_CIA"].str.replace(
@@ -80,10 +86,10 @@ def fetch_cvm():
                     print(
                         f"      Detectados {len(cnpjs_novos)} novos CNPJs no universe.json que estão ausentes na base."
                     )
-                    # Se houver novas empresas, forçamos o re-processamento de todos os anos alvo para obter os dados delas
-                    anos_faltantes = sorted(list(set(anos_faltantes + anos_alvo)))
-            else:
-                anos_faltantes = anos_alvo
+                    # Se houver novas empresas, forçamos o re-processamento de todos os anos alvo
+                    anos_faltantes = anos_alvo
+                
+                anos_faltantes = sorted(list(set(anos_faltantes)))
         except Exception as e:
             print(
                 f"Aviso: Erro ao ler o arquivo parquet existente ({e}). Iremos gerar a base inteira novamente."
@@ -107,90 +113,91 @@ def fetch_cvm():
     contas_desejadas = ["1", "1.01.01", "2.03", "2.01.04", "2.02.01", "3.11", "3.05"]
 
     for ano in anos_faltantes:
-        url = f"https://dados.cvm.gov.br/dados/CIA_ABERTA/DOC/DFP/DADOS/dfp_cia_aberta_{ano}.zip"
+        urls = [
+            f"https://dados.cvm.gov.br/dados/CIA_ABERTA/DOC/DFP/DADOS/dfp_cia_aberta_{ano}.zip",
+            f"https://dados.cvm.gov.br/dados/CIA_ABERTA/DOC/ITR/DADOS/itr_cia_aberta_{ano}.zip"
+        ]
         print(f"\n[3/6] Processando ano base: {ano}")
-        print(f"      Download ZIP: {url}")
 
-        try:
-            response = requests.get(url, timeout=60)
-            response.raise_for_status()
+        df_ano_list = []
+        for url in urls:
+            print(f"      Download ZIP: {url}")
+            try:
+                response = requests.get(url, timeout=60)
+                response.raise_for_status()
 
-            print("      Extraindo arquivos BPA_con, BPP_con e DRE_con...")
-            df_ano_list = []
+                print("      Extraindo arquivos BPA_con, BPP_con e DRE_con...")
 
-            with zipfile.ZipFile(io.BytesIO(response.content)) as z:
-                for file_name in z.namelist():
-                    if any(x in file_name for x in ["BPA_con", "BPP_con", "DRE_con"]):
-                        with z.open(file_name) as f:
-                            df_temp = pd.read_csv(f, sep=";", encoding="latin1")
-                            df_ano_list.append(df_temp)
-
-            if not df_ano_list:
+                with zipfile.ZipFile(io.BytesIO(response.content)) as z:
+                    for file_name in z.namelist():
+                        if any(x in file_name for x in ["BPA_con", "BPP_con", "DRE_con"]):
+                            with z.open(file_name) as f:
+                                df_temp = pd.read_csv(f, sep=";", encoding="latin1")
+                                df_ano_list.append(df_temp)
+            except requests.exceptions.HTTPError as e:
                 print(
-                    f"      Aviso: Nenhum arquivo de interesse encontrado no ZIP de {ano}."
+                    f"      Aviso: O arquivo ZIP não foi encontrado no site da CVM ou a conexão falhou ({url})."
                 )
-                continue
+            except Exception as e:
+                print(f"      Erro inesperado processando a URL {url}: {e}")
 
-            df_ano_concat = pd.concat(df_ano_list, ignore_index=True)
-
-            # 4. Filtros do Ano
-            # Remove pontos, barras e traços do CNPJ da tabela original para match limpo
-            df_ano_concat["cnpj_clean"] = df_ano_concat["CNPJ_CIA"].str.replace(
-                r"\D", "", regex=True
-            )
-
-            # Filtro das empresas mapeadas
-            df_ano_concat = df_ano_concat[
-                df_ano_concat["cnpj_clean"].isin(cnpj_to_ticker.keys())
-            ]
-
-            # Filtro de códigos de contas e apenas exercícios finais ('ÚLTIMO')
-            df_ano_concat = df_ano_concat[
-                df_ano_concat["CD_CONTA"].isin(contas_desejadas)
-            ]
-            df_ano_concat = df_ano_concat[df_ano_concat["ORDEM_EXERC"] == "ÚLTIMO"]
-
-            if df_ano_concat.empty:
-                print(
-                    f"      Aviso: Após aplicar filtros de CNPJ e conta contábil, não restaram dados úteis para {ano}."
-                )
-                continue
-
-            # Mapeamento do ticker
-            df_ano_concat["ticker"] = df_ano_concat["cnpj_clean"].map(cnpj_to_ticker)
-
-            # Pivot (Wide Format)
-            print("      Formatando tabela Pivot...")
-            df_pivot = df_ano_concat.pivot_table(
-                index=["CNPJ_CIA", "ticker", "DT_REFER"],
-                columns="CD_CONTA",
-                values="VL_CONTA",
-                aggfunc="first",
-            ).reset_index()
-
-            df_pivot.columns.name = None
-
-            # Garante que todas as contas desejadas existam no DF final
-            for conta in contas_desejadas:
-                if conta not in df_pivot.columns:
-                    df_pivot[conta] = pd.NA
-
-            df_pivot.rename(columns={"DT_REFER": "data_referencia"}, inplace=True)
-            df_pivot["data_referencia"] = pd.to_datetime(df_pivot["data_referencia"])
-
-            df_novos_dados = pd.concat([df_novos_dados, df_pivot], ignore_index=True)
+        if not df_ano_list:
             print(
-                f"      Ano {ano} inserido em buffer de atualização com {len(df_pivot)} registros."
-            )
-
-        except requests.exceptions.HTTPError as e:
-            print(
-                f"      Aviso: O arquivo ZIP do ano {ano} não foi encontrado no site da CVM ou a conexão falhou ({e})."
+                f"      Aviso: Nenhum arquivo de interesse encontrado (nem DFP nem ITR) no ano de {ano}."
             )
             continue
-        except Exception as e:
-            print(f"      Erro inesperado processando o ano {ano}: {e}")
+
+        df_ano_concat = pd.concat(df_ano_list, ignore_index=True)
+
+        # 4. Filtros do Ano
+        # Remove pontos, barras e traços do CNPJ da tabela original para match limpo
+        df_ano_concat["cnpj_clean"] = df_ano_concat["CNPJ_CIA"].str.replace(
+            r"\D", "", regex=True
+        )
+
+        # Filtro das empresas mapeadas
+        df_ano_concat = df_ano_concat[
+            df_ano_concat["cnpj_clean"].isin(cnpj_to_ticker.keys())
+        ]
+
+        # Filtro de códigos de contas e apenas exercícios finais ('ÚLTIMO')
+        df_ano_concat = df_ano_concat[
+            df_ano_concat["CD_CONTA"].isin(contas_desejadas)
+        ]
+        df_ano_concat = df_ano_concat[df_ano_concat["ORDEM_EXERC"] == "ÚLTIMO"]
+
+        if df_ano_concat.empty:
+            print(
+                f"      Aviso: Após aplicar filtros de CNPJ e conta contábil, não restaram dados úteis para {ano}."
+            )
             continue
+
+        # Mapeamento do ticker
+        df_ano_concat["ticker"] = df_ano_concat["cnpj_clean"].map(cnpj_to_ticker)
+
+        # Pivot (Wide Format)
+        print("      Formatando tabela Pivot...")
+        df_pivot = df_ano_concat.pivot_table(
+            index=["CNPJ_CIA", "ticker", "DT_REFER"],
+            columns="CD_CONTA",
+            values="VL_CONTA",
+            aggfunc="first",
+        ).reset_index()
+
+        df_pivot.columns.name = None
+
+        # Garante que todas as contas desejadas existam no DF final
+        for conta in contas_desejadas:
+            if conta not in df_pivot.columns:
+                df_pivot[conta] = pd.NA
+
+        df_pivot.rename(columns={"DT_REFER": "data_referencia"}, inplace=True)
+        df_pivot["data_referencia"] = pd.to_datetime(df_pivot["data_referencia"])
+
+        df_novos_dados = pd.concat([df_novos_dados, df_pivot], ignore_index=True)
+        print(
+            f"      Ano {ano} inserido em buffer de atualização com {len(df_pivot)} registros únicos."
+        )
 
     # 5. Concatenação Incremental
     print("\n[5/6] Consolidando Base Incremental...")
