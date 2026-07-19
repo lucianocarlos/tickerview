@@ -1,5 +1,14 @@
 import os
 import sys
+
+# MLOps Core Rule for Strategy A: Prevent OpenMP / C++ Thread Oversubscription
+# Isso DEVE ser configurado antes de qualquer import do numpy/torch/sklearn/xgboost
+os.environ["OMP_NUM_THREADS"] = "1"
+os.environ["OPENBLAS_NUM_THREADS"] = "1"
+os.environ["MKL_NUM_THREADS"] = "1"
+os.environ["VECLIB_MAXIMUM_THREADS"] = "1"
+os.environ["NUMEXPR_NUM_THREADS"] = "1"
+
 import json
 import time
 import pandas as pd
@@ -77,6 +86,10 @@ def worker_single_model(
     force_cpu=False,
 ):
     """Treina um único modelo em uma thread separada. Utilizado no Steal Phase da CPU."""
+    # Garante que PyTorch também fique estrangulado em 1 Thread dentro do worker
+    import torch
+    torch.set_num_threads(1)
+    
     model_start = time.time()
     try:
         metrics, conf_mat, feature_importances, importance_type = (
@@ -188,11 +201,15 @@ def executar_bateria_teste(config_path):
 
     # O nome do Datalake vem explicitamente de dentro do JSON (ou usa o nome do arquivo se não existir)
     file_name_fallback = os.path.basename(config_path).replace(".json", "")
-    battery_name = config.get("datalake_name", config.get("bateria_id", file_name_fallback))
+    battery_name = config.get(
+        "baterias_name", config.get("bateria_id", file_name_fallback)
+    )
 
     project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 
-    dynamic_db_path = os.path.join(project_root, "data", "datalake", battery_name, f"{battery_name}.db")
+    dynamic_db_path = os.path.join(
+        project_root, "data", "baterias", battery_name, f"{battery_name}.db"
+    )
     db_manager.set_db_path(dynamic_db_path)
 
     # Verifica se já existe um checkpoint Pai (a própria Bateria)
@@ -239,7 +256,9 @@ def executar_bateria_teste(config_path):
         print(f"       -> Dataset cadastrado/recuperado no Banco! ID: {dataset_id}")
 
         # Salvar dados brutos uma vez no disco para evitar serialização massiva via Joblib
-        cache_dir = os.path.join(project_root, "data", "datalake", battery_name, "cache")
+        cache_dir = os.path.join(
+            project_root, "data", "baterias", battery_name, "cache"
+        )
         os.makedirs(cache_dir, exist_ok=True)
         raw_cache_path = os.path.join(cache_dir, f"raw_{dataset_v}.parquet")
         df_raw.to_parquet(raw_cache_path)
@@ -248,7 +267,7 @@ def executar_bateria_teste(config_path):
             "split_configs", [{"method": "temporal_holdout", "train_ratio": 0.7}]
         )
         target_strategies = config.get("target_strategies", ["outperformance"])
-        
+
         prep = config.get("preprocessing", {})
         inf_strategies = prep.get("inf_handling", ["replace_nan"])
         imputation_strategies = prep.get("imputation", ["fill_zero"])
@@ -268,7 +287,9 @@ def executar_bateria_teste(config_path):
         for strategy_item in target_strategies:
             if isinstance(strategy_item, dict):
                 strategy_name = strategy_item.get("name")
-                current_target_def = {k: v for k, v in strategy_item.items() if k != "name"}
+                current_target_def = {
+                    k: v for k, v in strategy_item.items() if k != "name"
+                }
                 db_target_strategy = strategy_item
             else:
                 strategy_name = strategy_item
@@ -338,7 +359,11 @@ def executar_bateria_teste(config_path):
 
                                     for params in grid:
                                         hparams_str = (
-                                            json.dumps(params, ensure_ascii=False, sort_keys=True)
+                                            json.dumps(
+                                                params,
+                                                ensure_ascii=False,
+                                                sort_keys=True,
+                                            )
                                             if isinstance(params, dict)
                                             else params
                                         )
@@ -477,13 +502,15 @@ def executar_bateria_teste(config_path):
                     gpu_futures = []
                     chunk_size = 50
                     for i in range(0, len(modelos), chunk_size):
-                        chunk = modelos[i:i+chunk_size]
+                        chunk = modelos[i : i + chunk_size]
                         gpu_futures.append(
                             executor.submit(
                                 worker_treinar_lote, cp, chunk, global_permutation
                             )
                         )
-                    processar_resultados_futures(gpu_futures, "GPU-NATIVE", len(gpu_futures))
+                    processar_resultados_futures(
+                        gpu_futures, "GPU-NATIVE", len(gpu_futures)
+                    )
             print("[INFO] Fila de GPU finalizada.")
 
         def run_cpu():
@@ -495,7 +522,7 @@ def executar_bateria_teste(config_path):
                 for cp, modelos in lotes_cpu_dict.items():
                     chunk_size = 50
                     for i in range(0, len(modelos), chunk_size):
-                        chunk = modelos[i:i+chunk_size]
+                        chunk = modelos[i : i + chunk_size]
                         cpu_futures.append(
                             executor.submit(
                                 worker_treinar_lote, cp, chunk, global_permutation
@@ -517,7 +544,7 @@ def executar_bateria_teste(config_path):
                     break
 
                 print(
-                    f"\n[CPU-STEAL LOTE {lote_roubado}] Carregando dataset e atacando {len(modelos)} modelos na memória RAM..."
+                    f"\n[CPU-STEAL LOTE {lote_roubado}] Matriz em RAM. Enfileirando {len(modelos)} modelos (13 simultâneos, 1 thread cada)..."
                 )
                 X_train, y_train, X_val, y_val, X_test, y_test, feature_cols = (
                     joblib.load(cp)
@@ -574,65 +601,81 @@ def executar_bateria_teste(config_path):
     print(
         f"\n[SUCESSO ABSOLUTO] Bateria Mãe (ID: {battery_id}) encerrada com sucesso total em {battery_total_time:.1f} segundos!"
     )
-    
+
     # ---------------------------------------------------------
     # SUMÁRIO FINAL DA BATERIA
     # ---------------------------------------------------------
     try:
         from datetime import datetime, timedelta
+
         conn = db_manager.get_connection()
-        
+
         # Datetimes
         cur = conn.cursor()
-        cur.execute("SELECT created_at, finished_at FROM batteries WHERE id = ?", (battery_id,))
+        cur.execute(
+            "SELECT created_at, finished_at FROM batteries WHERE id = ?", (battery_id,)
+        )
         row = cur.fetchone()
         dt_start = row[0] if row else "?"
         dt_end = row[1] if row else "?"
-        
+
         time_str = str(timedelta(seconds=int(battery_total_time)))
-        
+
         # Número de modelos
-        cur.execute("SELECT COUNT(id) FROM models WHERE experiment_id IN (SELECT id FROM experiments WHERE battery_id = ?)", (battery_id,))
+        cur.execute(
+            "SELECT COUNT(id) FROM models WHERE experiment_id IN (SELECT id FROM experiments WHERE battery_id = ?)",
+            (battery_id,),
+        )
         num_models = cur.fetchone()[0]
-        
+
         # Max F1 per target
-        df_tgt = pd.read_sql(f"""
+        df_tgt = pd.read_sql(
+            f"""
             SELECT e.target_strategy, MAX(mc.test_f1_macro) as max_f1
             FROM models m
             JOIN metrics_classification mc ON m.id = mc.model_id
             JOIN experiments e ON m.experiment_id = e.id
             WHERE e.battery_id = {battery_id}
             GROUP BY e.target_strategy
-        """, conn)
-        
+        """,
+            conn,
+        )
+
         # Max F1 per estimator
-        df_est = pd.read_sql(f"""
+        df_est = pd.read_sql(
+            f"""
             SELECT m.model_name, MAX(mc.test_f1_macro) as max_f1
             FROM models m
             JOIN metrics_classification mc ON m.id = mc.model_id
             JOIN experiments e ON m.experiment_id = e.id
             WHERE e.battery_id = {battery_id}
             GROUP BY m.model_name
-        """, conn)
-        
-        print("\n" + "="*60)
+        """,
+            conn,
+        )
+
+        print("\n" + "=" * 60)
         print("               RELATÓRIO FINAL DA BATERIA")
-        print("="*60)
+        print("=" * 60)
         print(f"Data/Hora Início:     {dt_start}")
         print(f"Data/Hora Término:    {dt_end}")
         print(f"Tempo Total Gasto:    {time_str}")
         print(f"Total de Modelos:     {num_models}")
         print("\n--- F1 Score Máximo (Por Target) ---")
         for _, r in df_tgt.iterrows():
-            tgt_name = json.loads(r['target_strategy']).get('name') if '{' in r['target_strategy'] else r['target_strategy']
+            tgt_name = (
+                json.loads(r["target_strategy"]).get("name")
+                if "{" in r["target_strategy"]
+                else r["target_strategy"]
+            )
             print(f" {tgt_name:<30} | {r['max_f1']:.4f}")
-        
+
         print("\n--- F1 Score Máximo (Por Estimador) ---")
         for _, r in df_est.iterrows():
             print(f" {r['model_name']:<30} | {r['max_f1']:.4f}")
-            
-        print("="*60 + "\n")
-        
+
+        print("=" * 60 + "\n")
+
     except Exception as e:
         print(f"[AVISO] Não foi possível gerar o relatório final: {e}")
 
@@ -642,7 +685,9 @@ if __name__ == "__main__":
         caminho_json = sys.argv[1]
     else:
         # Carregamento autônomo sem necessidade de passagem de parâmetro
-        caminho_json = os.path.join(os.path.dirname(__file__), "config_experiment_bateria03.json")
+        caminho_json = os.path.join(
+            os.path.dirname(__file__), "config_experiment_bateria03.json"
+        )
         print(f"[SETUP] Nenhum parâmetro fornecido. Carregando padrão: {caminho_json}")
 
     executar_bateria_teste(caminho_json)

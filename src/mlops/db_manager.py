@@ -2,7 +2,7 @@ import sqlite3
 import json
 import os
 
-DB_PATH = r"data\datalake\default\datalake.db"
+DB_PATH = r"data\baterias\default\bateria.db"
 
 def set_db_path(new_path):
     """Permite que o Orquestrador defina o destino do Datalake dinamicamente"""
@@ -13,12 +13,12 @@ def _init_db(conn):
     cur = conn.cursor()
     cur.execute('''CREATE TABLE IF NOT EXISTS datasets (id INTEGER PRIMARY KEY AUTOINCREMENT, version_hash TEXT NOT NULL UNIQUE, features_count INTEGER, rows_count INTEGER, generation_parameters TEXT, created_at DATETIME DEFAULT (datetime('now', 'localtime')))''')
     cur.execute('''CREATE TABLE IF NOT EXISTS batteries (id INTEGER PRIMARY KEY AUTOINCREMENT, battery_name TEXT, global_config TEXT, elapsed_time_sec FLOAT, created_at DATETIME DEFAULT (datetime('now', 'localtime')), finished_at DATETIME)''')
-    cur.execute('''CREATE TABLE IF NOT EXISTS experiments (id INTEGER PRIMARY KEY AUTOINCREMENT, battery_id INTEGER NOT NULL, dataset_id INTEGER NOT NULL, task_type TEXT NOT NULL, target_strategy TEXT, experiment_config TEXT, elapsed_time_sec FLOAT, created_at DATETIME DEFAULT (datetime('now', 'localtime')), FOREIGN KEY (battery_id) REFERENCES batteries (id), FOREIGN KEY (dataset_id) REFERENCES datasets (id))''')
-    cur.execute('''CREATE TABLE IF NOT EXISTS models (id INTEGER PRIMARY KEY AUTOINCREMENT, experiment_id INTEGER NOT NULL, model_name TEXT NOT NULL, hyperparameters TEXT, execution_time_sec FLOAT, created_at DATETIME DEFAULT (datetime('now', 'localtime')), FOREIGN KEY (experiment_id) REFERENCES experiments (id))''')
-    cur.execute('''CREATE TABLE IF NOT EXISTS metrics_classification (model_id INTEGER PRIMARY KEY, val_accuracy FLOAT, val_f1_macro FLOAT, test_accuracy FLOAT, test_f1_macro FLOAT, test_f1_weighted FLOAT, test_precision_macro FLOAT, test_recall_macro FLOAT, confusion_matrix TEXT, FOREIGN KEY (model_id) REFERENCES models (id))''')
-    cur.execute('''CREATE TABLE IF NOT EXISTS metrics_clustering (model_id INTEGER PRIMARY KEY, silhouette_score FLOAT, davies_bouldin FLOAT, FOREIGN KEY (model_id) REFERENCES models (id))''')
-    cur.execute('''CREATE TABLE IF NOT EXISTS metrics_association (model_id INTEGER PRIMARY KEY, support_avg FLOAT, confidence_avg FLOAT, FOREIGN KEY (model_id) REFERENCES models (id))''')
-    cur.execute('''CREATE TABLE IF NOT EXISTS feature_importances (id INTEGER PRIMARY KEY AUTOINCREMENT, model_id INTEGER NOT NULL, feature_name TEXT NOT NULL, importance_value FLOAT NOT NULL, importance_type TEXT NOT NULL, FOREIGN KEY (model_id) REFERENCES models (id))''')
+    cur.execute('''CREATE TABLE IF NOT EXISTS experiments (id INTEGER PRIMARY KEY AUTOINCREMENT, battery_id INTEGER NOT NULL, dataset_id INTEGER NOT NULL, task_type TEXT NOT NULL, target_strategy TEXT, experiment_config TEXT, elapsed_time_sec FLOAT, created_at DATETIME DEFAULT (datetime('now', 'localtime')), FOREIGN KEY (battery_id) REFERENCES batteries (id) ON DELETE CASCADE, FOREIGN KEY (dataset_id) REFERENCES datasets (id) ON DELETE CASCADE)''')
+    cur.execute('''CREATE TABLE IF NOT EXISTS models (id INTEGER PRIMARY KEY AUTOINCREMENT, experiment_id INTEGER NOT NULL, model_name TEXT NOT NULL, hyperparameters TEXT, execution_time_sec FLOAT, created_at DATETIME DEFAULT (datetime('now', 'localtime')), FOREIGN KEY (experiment_id) REFERENCES experiments (id) ON DELETE CASCADE)''')
+    cur.execute('''CREATE TABLE IF NOT EXISTS metrics_classification (model_id INTEGER PRIMARY KEY, val_accuracy FLOAT, val_f1_macro FLOAT, test_accuracy FLOAT, test_f1_macro FLOAT, test_f1_weighted FLOAT, test_precision_macro FLOAT, test_recall_macro FLOAT, confusion_matrix TEXT, FOREIGN KEY (model_id) REFERENCES models (id) ON DELETE CASCADE)''')
+    cur.execute('''CREATE TABLE IF NOT EXISTS metrics_clustering (model_id INTEGER PRIMARY KEY, silhouette_score FLOAT, davies_bouldin FLOAT, FOREIGN KEY (model_id) REFERENCES models (id) ON DELETE CASCADE)''')
+    cur.execute('''CREATE TABLE IF NOT EXISTS metrics_association (model_id INTEGER PRIMARY KEY, support_avg FLOAT, confidence_avg FLOAT, FOREIGN KEY (model_id) REFERENCES models (id) ON DELETE CASCADE)''')
+    cur.execute('''CREATE TABLE IF NOT EXISTS feature_importances (id INTEGER PRIMARY KEY AUTOINCREMENT, model_id INTEGER NOT NULL, feature_name TEXT NOT NULL, importance_value FLOAT NOT NULL, importance_type TEXT NOT NULL, FOREIGN KEY (model_id) REFERENCES models (id) ON DELETE CASCADE)''')
     conn.commit()
 
 _DB_INITIALIZED = False
@@ -28,6 +28,10 @@ def get_connection():
     # Cria os diretórios caso não existam
     os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)
     conn = sqlite3.connect(DB_PATH)
+    
+    # IMPORTANTE: Força o SQLite a respeitar Foreign Keys (inclusive Deleção em Cascata) em todas as conexões
+    conn.execute("PRAGMA foreign_keys = ON;")
+    
     if not _DB_INITIALIZED:
         _init_db(conn)
         _DB_INITIALIZED = True

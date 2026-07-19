@@ -1,0 +1,11 @@
+{
+    "sqltools.useNodeRuntime": true,
+    "sqltools.connections": [
+        {
+            "previewLimit": 50,
+            "driver": "SQLite",
+            "name": "bateria03",
+            "database": "${workspaceFolder:tickerview}/data/baterias/bateria02/bateria02.db"
+        }
+    ]
+}

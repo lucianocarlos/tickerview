@@ -3,10 +3,11 @@
         "target_strategies: Estratégias de construção do alvo (ex: outperformance, fundamental_turnaround, volatility_regime, directional_regime, drawdown_risk, dividend_trap_regime)",
         "inf_handling_strategies: Como lidar com divisões por zero geradas nos Ratios (ex: replace_nan, drop_row)",
         "imputation_strategies: Como imputar Nulos (ex: fill_zero, sector_median)",
-        "outlier_handling_methods: Como cortar limites extremos (ex: none, clip_99_1, clip_95_5, zscore_3, iqr_1_5)",
-        "scaling_methods: Padronização final das features (ex: none, standard, minmax, robust)"
+        "outlier_handling_methods": "Como cortar limites extremos (ex: none, clip_99_1, clip_95_5, zscore_3, iqr_1_5)",
+        "scaling_methods": "Padronização final das features (ex: none, standard, minmax, robust)",
+        "pca_residual_recycle": "Opcional. Uma tupla [k_cut, n_components] que preserva as top K features e recicla as restantes esmagando-as em n componentes com PCA. Ex: [20, 3]"
     ],
-    "datalake_name": "bateria02",
+    "baterias_name": "bateria03",
     "calculate_permutation_importance": false,
     "datasets": [
         "dataset001"

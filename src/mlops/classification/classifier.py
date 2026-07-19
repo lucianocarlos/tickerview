@@ -15,8 +15,9 @@ from sklearn.inspection import permutation_importance
 # Modelos do Scikit-Learn mantidos para legado/feature selection
 from sklearn.tree import DecisionTreeClassifier
 from sklearn.ensemble import RandomForestClassifier
+from sklearn.impute import SimpleImputer
 from sklearn.feature_selection import SelectFromModel
-
+from sklearn.decomposition import PCA
 import torch
 import torch.nn as nn
 import torch.optim as optim
@@ -756,42 +757,81 @@ def treinar_e_avaliar_modelo_pre_processado(
     Passo 2: Pega os dados 100% limpos, faz o Feature Selection e treina na GPU/CPU.
     """
     # 5. Feature Selection
-    feature_selection_top_k = hparams.get("feature_selection_top_k", None)
+    drop_feat = hparams.get("drop_feat", None)
+    
     clean_hparams = {
         k: v
         for k, v in hparams.items()
-        if not k.startswith("_") and k != "feature_selection_top_k"
+        if not k.startswith("_") and k != "drop_feat"
     }
 
     # Helper para device override
     local_device = "cpu" if force_cpu else DEVICE
     
-    if feature_selection_top_k is not None and feature_selection_top_k < len(
-        feature_cols
-    ):
-        # Cachear o resultado do Feature Selection por top_k (evita re-treinar a árvore)
+    k_cut = None
+    is_pca = False
+    n_comp = 1
+    
+    if drop_feat is not None and isinstance(drop_feat, dict):
+        df_type = drop_feat.get("type", "none")
+        if df_type != "none":
+            k_cut = drop_feat.get("k", None)
+            if df_type == "pca":
+                is_pca = True
+                n_comp = drop_feat.get("n_components", 1)
+
+    if k_cut is not None and k_cut < len(feature_cols):
+        cache_key = f"drop_feat_{'pca' if is_pca else 'top_k'}_{k_cut}_{n_comp}"
+        
         with fs_global_lock:
-            cached_cols = fs_cache.get(feature_selection_top_k) if fs_cache is not None else None
+            cached_result = fs_cache.get(cache_key) if fs_cache is not None else None
             
-        if cached_cols is not None:
-            feature_cols = cached_cols
+        if cached_result is not None:
+            feature_cols = cached_result['cols']
+            X_train = cached_result['X_train']
+            X_val = cached_result['X_val']
+            X_test = cached_result['X_test']
         else:
             selector = SelectFromModel(
                 DecisionTreeClassifier(random_state=42, max_depth=10),
-                max_features=feature_selection_top_k,
+                max_features=k_cut,
                 threshold=-np.inf,
             )
             selector.fit(X_train[feature_cols], y_train)
-            feature_cols = np.array(feature_cols)[selector.get_support()].tolist()
+            support = selector.get_support()
+            
+            top_cols = np.array(feature_cols)[support].tolist()
+            rejected_cols = np.array(feature_cols)[~support].tolist()
+            
+            if is_pca and len(rejected_cols) > n_comp:
+                pca = PCA(n_components=n_comp, random_state=42)
+                pca.fit(X_train[rejected_cols])
+                
+                def apply_pca(df, pca_model, rej_cols, n):
+                    pca_df = pd.DataFrame(
+                        pca_model.transform(df[rej_cols]),
+                        index=df.index,
+                        columns=[f"pca_residual_{i+1}" for i in range(n)]
+                    )
+                    return pd.concat([df[top_cols], pca_df], axis=1)
+                
+                X_train = apply_pca(X_train, pca, rejected_cols, n_comp)
+                X_val = apply_pca(X_val, pca, rejected_cols, n_comp)
+                X_test = apply_pca(X_test, pca, rejected_cols, n_comp)
+                
+                feature_cols = top_cols + [f"pca_residual_{i+1}" for i in range(n_comp)]
+            else:
+                feature_cols = top_cols
+                X_train, X_val, X_test = X_train[feature_cols], X_val[feature_cols], X_test[feature_cols]
+
             if fs_cache is not None:
                 with fs_global_lock:
-                    fs_cache[feature_selection_top_k] = feature_cols
-
-        X_train, X_val, X_test = (
-            X_train[feature_cols],
-            X_val[feature_cols],
-            X_test[feature_cols],
-        )
+                    fs_cache[cache_key] = {
+                        'cols': feature_cols,
+                        'X_train': X_train,
+                        'X_val': X_val,
+                        'X_test': X_test
+                    }
 
     # 6. Instanciar Modelo (Reprodutibilidade: Random State 42 sempre que possível)
     if "random_state" not in clean_hparams and model_name not in [
@@ -800,10 +840,14 @@ def treinar_e_avaliar_modelo_pre_processado(
     ]:
         clean_hparams["random_state"] = 42
 
+    # Estratégia A: Força n_jobs=1 sempre para evitar Thread Oversubscription
+    if model_name in ["xgboost", "lightgbm", "random_forest", "voting_classifier"]:
+        clean_hparams["n_jobs"] = 1
+
     if model_name == "decision_tree":
         model = DecisionTreeClassifier(**clean_hparams)
     elif model_name == "random_forest":
-        model = RandomForestClassifier(n_jobs=1, **clean_hparams)
+        model = RandomForestClassifier(**clean_hparams)
     elif model_name == "knn":
         model = PyTorchKNNWrapper(device=local_device, **clean_hparams)
     elif model_name == "mlp":
@@ -823,7 +867,7 @@ def treinar_e_avaliar_modelo_pre_processado(
                 if "subsample_freq" not in clean_hparams or clean_hparams["subsample_freq"] == 0:
                     clean_hparams["subsample_freq"] = 1
                     
-            model = LGBMClassifier(n_jobs=1, **clean_hparams)
+            model = LGBMClassifier(**clean_hparams)
         else:
             raise ValueError("LightGBM não está instalado.")
     elif model_name == "xgboost":
@@ -834,9 +878,9 @@ def treinar_e_avaliar_modelo_pre_processado(
         if "verbosity" not in clean_hparams:
             clean_hparams["verbosity"] = 0
         if XGBOOST_AVAILABLE:
-            model = XGBClassifier(n_jobs=1, **clean_hparams)
+            model = XGBClassifier(**clean_hparams)
         else:
-            model = RandomForestClassifier(n_jobs=1, **clean_hparams)
+            model = RandomForestClassifier(**clean_hparams)
     elif model_name == "voting_classifier":
         # Habilitar GPU para os componentes do Voting
         xgb_params = {

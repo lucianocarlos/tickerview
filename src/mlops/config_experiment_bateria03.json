@@ -11,23 +11,26 @@
         },
         {
             "name": "volatility_regime",
-            "horizon_days": 5,
-            "threshold": 0.02
+            "horizon_days": 5
         },
         {
             "name": "directional_regime",
-            "horizon_days": 2,
-            "threshold": 0.02
+            "horizon_days": 5,
+            "threshold": 0.05
+        },
+        {
+            "name": "directional_regime",
+            "horizon_days": 60,
+            "threshold": 0.20
         },
         {
             "name": "fundamental_turnaround",
-            "horizon_days": 5,
-            "threshold": 0.02
+            "horizon_days": 120
         },
         {
             "name": "drawdown_risk",
-            "horizon_days": 5,
-            "threshold": 0.02
+            "horizon_days": 4,
+            "threshold": 0.03
         }
     ],
     "split_configs": [
@@ -75,6 +78,18 @@
             ],
             "reg_lambda": [
                 7.0
+            ],
+            "drop_feat": [
+                {
+                    "type": "top_k",
+                    "k": 40
+                },
+                {
+                    "type": "pca",
+                    "k": 40,
+                    "n_components": 3
+                },
+                "none"
             ]
         },
         "lightgbm": {
@@ -102,6 +117,18 @@
             ],
             "reg_lambda": [
                 1.0
+            ],
+            "drop_feat": [
+                {
+                    "type": "top_k",
+                    "k": 40
+                },
+                {
+                    "type": "pca",
+                    "k": 40,
+                    "n_components": 3
+                },
+                "none"
             ]
         },
         "random_forest": {
@@ -116,6 +143,18 @@
             ],
             "class_weight": [
                 "balanced"
+            ],
+            "drop_feat": [
+                {
+                    "type": "top_k",
+                    "k": 40
+                },
+                {
+                    "type": "pca",
+                    "k": 40,
+                    "n_components": 3
+                },
+                "none"
             ]
         },
         "mlp": {
@@ -146,14 +185,69 @@
             "class_weight": [
                 "balanced",
                 null
+            ],
+            "drop_feat": [
+                {
+                    "type": "top_k",
+                    "k": 40
+                },
+                {
+                    "type": "pca",
+                    "k": 40,
+                    "n_components": 3
+                },
+                "none"
+            ]
+        },
+        "decision_tree": {
+            "max_depth": [
+                9,
+                12
+            ],
+            "min_samples_split": [
+                10,
+                20
+            ],
+            "class_weight": [
+                "balanced"
+            ],
+            "drop_feat": [
+                {
+                    "type": "top_k",
+                    "k": 40
+                },
+                {
+                    "type": "pca",
+                    "k": 40,
+                    "n_components": 3
+                },
+                "none"
+            ]
+        },
+        "knn": {
+            "n_neighbors": [
+                5,
+                11
+            ],
+            "weights": [
+                "uniform",
+                "distance"
+            ],
+            "metric": [
+                "manhattan"
+            ],
+            "drop_feat": [
+                {
+                    "type": "top_k",
+                    "k": 40
+                },
+                {
+                    "type": "pca",
+                    "k": 40,
+                    "n_components": 3
+                },
+                "none"
             ]
         }
-    },
-    "feature_selection": {
-        "top_k": [
-            20,
-            60,
-            null
-        ]
     }
 }
