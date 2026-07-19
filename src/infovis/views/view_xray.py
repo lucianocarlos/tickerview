@@ -2,7 +2,6 @@ import streamlit as st
 import plotly.graph_objects as go
 import plotly.express as px
 import pandas as pd
-import ast
 import json
 from utils.data_loader import load_xai_metadata
 
@@ -34,20 +33,14 @@ def render_xray(df_report, exp_id_selecionado):
 
     with col_spider:
         st.markdown("**Comparativo Geral**")
-        categories = [
-            "Val Acc",
-            "Val F1",
-            "Test Acc",
-            "Test F1",
-            "Test Prec",
-            "Test Rec",
-        ]
+
+        categories = ["V-Acc", "V-F1", "T-Pre", "T-Acc", "T-F1", "T-Rec"]
         valores = [
             row["val_accuracy"],
             row["val_f1_score_macro"],
+            row["test_precision_macro"],
             row["test_accuracy"],
             row["test_f1_score_macro"],
-            row["test_precision_macro"],
             row["test_recall_macro"],
         ]
 
@@ -60,7 +53,21 @@ def render_xray(df_report, exp_id_selecionado):
             )
         )
         fig_spider.update_layout(
-            polar=dict(radialaxis=dict(visible=True, range=[0, 1])),
+            polar=dict(
+                radialaxis=dict(
+                    visible=True,
+                    range=[0, 1],
+                    tickfont=dict(size=8, color="rgba(100,100,100,0.7)"),
+                    nticks=4,
+                    angle=0,
+                ),
+                angularaxis=dict(
+                    showticklabels=True,
+                    tickfont=dict(size=8, color="gray"),
+                    ticks="",
+                    direction="clockwise",
+                ),
+            ),
             showlegend=False,
             margin=dict(t=20, b=20, l=30, r=30),
             height=250,

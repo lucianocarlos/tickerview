@@ -6,14 +6,14 @@ import streamlit as st
 PROJECT_ROOT = os.path.dirname(
     os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 )
-DATALAKE_DIR = os.path.join(PROJECT_ROOT, "data", "datalake")
+DATALAKE_DIR = os.path.join(PROJECT_ROOT, "data", "baterias")
 
 
 @st.cache_data
 def load_all_metrics():
     """
     Carrega todo o histórico de métricas de todos os bancos datalake.db
-    encontrados nas subpastas de data/datalake.
+    encontrados nas subpastas de data/baterias.
     """
     if not os.path.exists(DATALAKE_DIR):
         st.error(f"Diretório Datalake não encontrado em {DATALAKE_DIR}")
@@ -21,9 +21,9 @@ def load_all_metrics():
 
     all_dfs = []
 
-    # Varre as pastas dentro do datalake
+    # Varre as pastas dentro de baterias
     for folder in os.listdir(DATALAKE_DIR):
-        db_path = os.path.join(DATALAKE_DIR, folder, "datalake.db")
+        db_path = os.path.join(DATALAKE_DIR, folder, f"{folder}.db")
         if not os.path.isfile(db_path):
             continue
 
@@ -34,6 +34,8 @@ def load_all_metrics():
             m.id as exp_id,
             m.model_name as model_type,
             e.target_strategy,
+            e.target_strategy as target_strategy_raw,
+            e.experiment_config,
             json_extract(e.experiment_config, '$.split_config.method') as split_method,
             mc.val_accuracy,
             mc.val_f1_macro as val_f1_score_macro,
@@ -77,6 +79,60 @@ def load_all_metrics():
 
     df_global["split_method"] = df_global["split_method"].apply(rename_split)
 
+    # Tratando target_strategy (JSON string vs Normal string)
+    import json
+    
+    def safe_json_load(val):
+        if pd.isna(val):
+            return {}
+        if isinstance(val, str) and val.startswith("{"):
+            try:
+                return json.loads(val)
+            except:
+                pass
+        return {}
+
+    df_global["parameters_dict"] = df_global["parameters"].apply(safe_json_load)
+    df_global["experiment_config_dict"] = df_global["experiment_config"].apply(safe_json_load)
+
+    def rename_target(target):
+        if not target:
+            return "unknown"
+        try:
+            # Se for JSON string (novo formato)
+            if target.startswith("{"):
+                data = json.loads(target)
+                name = data.get("name", target)
+                horizon = data.get("horizon_days", "")
+                thresh = data.get("threshold", "")
+                if horizon and thresh:
+                    return f"{name} ({horizon}d | {thresh})"
+                elif horizon:
+                    return f"{name} ({horizon}d)"
+                return name
+        except:
+            pass
+        return target
+        
+    df_global["target_strategy_display"] = df_global["target_strategy"].apply(rename_target)
+    df_global["target_strategy"] = df_global["target_strategy_display"]
+
+    # Tratando model_type (Removendo subtipos)
+    def rename_model(model_name):
+        if not model_name:
+            return "unknown"
+        # Raízes conhecidas que possuem underscore
+        roots = [
+            "random_forest", "logistic_regression", "decision_tree", 
+            "voting_classifier", "xgboost", "lightgbm", "mlp", "knn"
+        ]
+        for root in roots:
+            if model_name.startswith(root):
+                return root
+        return model_name
+        
+    df_global["model_type"] = df_global["model_type"].apply(rename_model)
+
     # Remove duplicações reais por bateria + exp_id
     if "exp_id" in df_global.columns:
         df_global = df_global.drop_duplicates(
@@ -89,7 +145,7 @@ def load_all_metrics():
 @st.cache_data
 def get_available_datasets():
     """
-    Retorna os datasets únicos testados no datalake (ex: bateria01, bateria02).
+    Retorna os datasets únicos testados no diretório baterias (ex: bateria01, bateria02).
     """
     df = load_all_metrics()
     if df.empty or "dataset_version" not in df.columns:
@@ -102,7 +158,7 @@ def load_xai_metadata(model_id, dataset_version):
     """
     Busca o array de Feature Importances injetado no SQLite para um modelo e bateria específicos.
     """
-    db_path = os.path.join(DATALAKE_DIR, dataset_version, "datalake.db")
+    db_path = os.path.join(DATALAKE_DIR, dataset_version, f"{dataset_version}.db")
     if not os.path.exists(db_path):
         return {}
 
@@ -123,6 +179,34 @@ def load_xai_metadata(model_id, dataset_version):
     if rows:
         return {r[0]: r[1] for r in rows}
     return {}
+
+
+@st.cache_data
+def load_bulk_xai_metadata(dataset_version):
+    """
+    Busca todas as importâncias de features para todos os modelos de uma bateria específica,
+    retornando um DataFrame consolidado, ideal para plotagem global (Beeswarm, Matrix).
+    """
+    db_path = os.path.join(DATALAKE_DIR, dataset_version, f"{dataset_version}.db")
+    if not os.path.exists(db_path):
+        return pd.DataFrame()
+
+    conn = sqlite3.connect(db_path)
+    try:
+        query = """
+            SELECT f.model_id, m.model_name, f.feature_name, f.importance_value 
+            FROM feature_importances f 
+            JOIN models m ON f.model_id = m.id
+        """
+        df = pd.read_sql(query, conn)
+    except Exception as e:
+        st.warning(f"Erro ao carregar xai metadata bulk: {e}")
+        df = pd.DataFrame()
+    finally:
+        conn.close()
+
+    return df
+
 
 
 @st.cache_data
