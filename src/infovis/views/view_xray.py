@@ -96,14 +96,14 @@ def render_xray(df_report, exp_id_selecionado):
         except Exception as e:
             st.warning("Matriz de Confusão indisponível.")
 
-    with st.expander("Ver Parâmetros Brutos e Tabela (Drill-Down)"):
+    with st.expander("Ver Parâmetros Brutos e Tabela"):
         col_params, col_table = st.columns([3, 7])
         with col_params:
             st.write("**Parâmetros do Modelo**")
             st.json(row["parameters"])
         with col_table:
             st.write("**Tabela de Dados Brutos**")
-            st.dataframe(pd.DataFrame([row]), use_container_width=True)
+            st.dataframe(pd.DataFrame([row]), use_container_width=True, height=100)
 
     # Nova seção de XAI (Explainable AI) extraída do Datalake
     st.markdown("---")

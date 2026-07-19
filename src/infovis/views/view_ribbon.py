@@ -351,7 +351,7 @@ def render_horizontal_ribbon(df_filtered, sort_metric, current_dataset, panel_id
             btn_label = (
                 f"id:{row['exp_id']} | {row['model_type']} | {row[sort_metric]:.4f}"
             )
-            c1, c2 = st.columns([0.85, 0.15])
+            c1, c2, c3 = st.columns([0.80, 0.10, 0.10])
             with c1:
                 if st.button(
                     btn_label,
@@ -369,14 +369,27 @@ def render_horizontal_ribbon(df_filtered, sort_metric, current_dataset, panel_id
                         st.rerun()
             with c2:
                 if st.button(
+                    "**:gray[[=]]**",
+                    key=f"btn_cmp_{panel_id}_{row['exp_id']}_{i}",
+                    use_container_width=True,
+                    type="tertiary",
+                ):
+                    if st.session_state.get("selected_exp") is None:
+                        st.toast("Selecione um Modelo Primeiro (clicando no nome dele)")
+                    else:
+                        st.session_state[f"open_deep_compare_{panel_id}"] = row["exp_id"]
+                        st.session_state[f"compare_dataset_{panel_id}"] = current_dataset
+                        st.rerun()
+            with c3:
+                if st.button(
                     "**:red[[+]]**",
                     key=f"btn_xray_{panel_id}_{row['exp_id']}_{i}",
                     use_container_width=True,
                     type="tertiary",
                 ):
-                    st.session_state["selected_exp"] = row["exp_id"]
-                    st.session_state["selected_dataset"] = current_dataset
-                    st.session_state[f"open_dialog_{panel_id}"] = True
+                    # Não altera a seleção global, apenas abre o XRay para este id
+                    st.session_state[f"open_dialog_{panel_id}"] = row["exp_id"]
+                    st.session_state[f"dialog_dataset_{panel_id}"] = current_dataset
                     st.rerun()
 
             if ribbon_mode == "Métricas":
@@ -448,6 +461,28 @@ def render_horizontal_ribbon(df_filtered, sort_metric, current_dataset, panel_id
                 key=f"spider_hz_{panel_id}_{row['exp_id']}_{i}",
             )
 
+    # Handlers para os modais (Dialogs)
     if st.session_state.get(f"open_dialog_{panel_id}"):
+        clicked_id = st.session_state[f"open_dialog_{panel_id}"]
+        clicked_dataset = st.session_state.get(f"dialog_dataset_{panel_id}", current_dataset)
         st.session_state[f"open_dialog_{panel_id}"] = False
-        render_xray(df_filtered, st.session_state["selected_exp"])
+        # Import lazy to avoid circular issues
+        from views.view_xray import render_xray
+        
+        # Recupera as informações deste experimento a partir do df_filtered
+        row_data = df_filtered[df_filtered["exp_id"] == clicked_id]
+        if row_data.empty:
+            st.error("Experimento não encontrado no recorte atual.")
+        else:
+            render_xray(df_filtered, clicked_id)
+
+    if st.session_state.get(f"open_deep_compare_{panel_id}"):
+        compare_id = st.session_state[f"open_deep_compare_{panel_id}"]
+        compare_dataset = st.session_state.get(f"compare_dataset_{panel_id}", current_dataset)
+        st.session_state[f"open_deep_compare_{panel_id}"] = False
+        
+        from views.view_deepcomparison import render_deepcomparison
+        base_id = st.session_state.get("selected_exp")
+        base_dataset = st.session_state.get("selected_dataset")
+        
+        render_deepcomparison(base_id, base_dataset, compare_id, compare_dataset)
