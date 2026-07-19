@@ -9,6 +9,14 @@ data/datalake/*
 data/datalake/*/*
 !data/datalake/*/datalake.db
 
+# EXCEÇÃO: permitir somente os .db dentro de data/baterias/*/
+!data/baterias/
+data/baterias/*
+!data/baterias/*/
+data/baterias/*/*
+!data/baterias/*/*.db
+
+
 # Ignorar banco de dados e arquivos pesados (fora de data/)
 *.parquet 
 *.duckdb
