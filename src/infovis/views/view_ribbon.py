@@ -1,12 +1,20 @@
 import streamlit as st
 import plotly.graph_objects as go
 import plotly.express as px
-from views.view_xray import render_xray
 from utils.data_loader import load_xai_metadata, load_bulk_xai_metadata
 import pandas as pd
 
 
-def render_summary_card(df_filtered, selected_exp, sort_metric, panel_id, summary_view, ribbon_mode, current_dataset, df_filtered_full=None):
+def render_summary_card(
+    df_filtered,
+    selected_exp,
+    sort_metric,
+    panel_id,
+    summary_view,
+    ribbon_mode,
+    current_dataset,
+    df_filtered_full=None,
+):
     #    st.markdown(
     #        f"<div style='font-size: 0.9em; font-weight: bold; text-align: center;'>{summary_view}</div>",
     #        unsafe_allow_html=True,
@@ -29,34 +37,51 @@ def render_summary_card(df_filtered, selected_exp, sort_metric, panel_id, summar
     if summary_view == "Densidade (Features)":
         xai_bulk = load_bulk_xai_metadata(current_dataset)
         if not xai_bulk.empty:
-            df_for_features = df_filtered_full if df_filtered_full is not None else df_filtered
-            xai_filtered = xai_bulk[xai_bulk["model_id"].isin(df_for_features["exp_id"])].copy()
+            df_for_features = (
+                df_filtered_full if df_filtered_full is not None else df_filtered
+            )
+            xai_filtered = xai_bulk[
+                xai_bulk["model_id"].isin(df_for_features["exp_id"])
+            ].copy()
             xai_filtered["abs_imp"] = xai_filtered["importance_value"].abs()
-            
+
             # Ponderação
-            grouped = xai_filtered.groupby(['feature_name', 'model_name']).agg(
-                ocorrencias=('model_id', 'count'),
-                media=('abs_imp', 'mean')
-            ).reset_index()
-            grouped['ocorrencia_ponderada'] = grouped['ocorrencias'] * grouped['media']
-            
+            grouped = (
+                xai_filtered.groupby(["feature_name", "model_name"])
+                .agg(ocorrencias=("model_id", "count"), media=("abs_imp", "mean"))
+                .reset_index()
+            )
+            grouped["ocorrencia_ponderada"] = grouped["ocorrencias"] * grouped["media"]
+
             # Obter top 10 features globalmente (soma da ocorrência ponderada)
-            top_10 = grouped.groupby('feature_name')['ocorrencia_ponderada'].sum().nlargest(10).index
-            plot_data = grouped[grouped['feature_name'].isin(top_10)].copy()
-            
+            top_10 = (
+                grouped.groupby("feature_name")["ocorrencia_ponderada"]
+                .sum()
+                .nlargest(10)
+                .index
+            )
+            plot_data = grouped[grouped["feature_name"].isin(top_10)].copy()
+
             # Gráfico de Barras Empilhadas
             fig_px = px.bar(
-                plot_data, 
-                x="ocorrencia_ponderada", 
-                y="feature_name", 
-                color="model_name", 
+                plot_data,
+                x="ocorrencia_ponderada",
+                y="feature_name",
+                color="model_name",
                 orientation="h",
-                color_discrete_sequence=px.colors.qualitative.Pastel
+                color_discrete_sequence=px.colors.qualitative.Pastel,
             )
-            
+
             fig_px.update_layout(
-                yaxis=dict(categoryorder="total ascending", tickfont=dict(size=8, color="gray"), title=""),
-                xaxis=dict(title=dict(text="Ocorrência Ponderada", font=dict(size=8)), tickfont=dict(size=8, color="gray")),
+                yaxis=dict(
+                    categoryorder="total ascending",
+                    tickfont=dict(size=8, color="gray"),
+                    title="",
+                ),
+                xaxis=dict(
+                    title=dict(text="Ocorrência Ponderada", font=dict(size=8)),
+                    tickfont=dict(size=8, color="gray"),
+                ),
                 showlegend=True,
                 legend=dict(
                     title="",
@@ -65,12 +90,12 @@ def render_summary_card(df_filtered, selected_exp, sort_metric, panel_id, summar
                     y=1.02,
                     xanchor="right",
                     x=1,
-                    font=dict(size=8)
+                    font=dict(size=8),
                 ),
                 margin=dict(t=5, b=0, l=5, r=5),
                 height=270,
                 paper_bgcolor="rgba(0,0,0,0)",
-                plot_bgcolor="rgba(0,0,0,0)"
+                plot_bgcolor="rgba(0,0,0,0)",
             )
             fig = fig_px
         else:
@@ -79,43 +104,59 @@ def render_summary_card(df_filtered, selected_exp, sort_metric, panel_id, summar
     elif summary_view == "SHAP Summary":
         xai_bulk = load_bulk_xai_metadata(current_dataset)
         if not xai_bulk.empty:
-            df_for_features = df_filtered_full if df_filtered_full is not None else df_filtered
-            xai_filtered = xai_bulk[xai_bulk["model_id"].isin(df_for_features["exp_id"])].copy()
-            xai_filtered["abs_imp"] = xai_filtered["importance_value"].abs()
-            
-            # Ponderação para definir a ordem do Eixo Y
-            grouped_ord = xai_filtered.groupby(['feature_name']).agg(
-                ocorrencias=('model_id', 'count'),
-                media=('abs_imp', 'mean')
+            df_for_features = (
+                df_filtered_full if df_filtered_full is not None else df_filtered
             )
-            grouped_ord['ocorrencia_ponderada'] = grouped_ord['ocorrencias'] * grouped_ord['media']
-            top_global = grouped_ord.sort_values(by='ocorrencia_ponderada', ascending=False).head(10).index
-            
+            xai_filtered = xai_bulk[
+                xai_bulk["model_id"].isin(df_for_features["exp_id"])
+            ].copy()
+            xai_filtered["abs_imp"] = xai_filtered["importance_value"].abs()
+
+            # Ponderação para definir a ordem do Eixo Y
+            grouped_ord = xai_filtered.groupby(["feature_name"]).agg(
+                ocorrencias=("model_id", "count"), media=("abs_imp", "mean")
+            )
+            grouped_ord["ocorrencia_ponderada"] = (
+                grouped_ord["ocorrencias"] * grouped_ord["media"]
+            )
+            top_global = (
+                grouped_ord.sort_values(by="ocorrencia_ponderada", ascending=False)
+                .head(10)
+                .index
+            )
+
             xai_plot = xai_filtered[xai_filtered["feature_name"].isin(top_global)]
-            
+
             # SHAP-like Beeswarm Plot
-            fig.add_trace(go.Box(
-                x=xai_plot["importance_value"],
-                y=xai_plot["feature_name"],
-                orientation='h',
-                boxpoints='all',
-                jitter=0.5,
-                pointpos=0, # centers the points
-                fillcolor='rgba(255,255,255,0)',
-                line=dict(color='rgba(255,255,255,0)'),
-                marker=dict(
-                    color="#5A92D8", 
-                    size=4,
-                    line=dict(width=0)
-                ),
-                showlegend=False
-            ))
+            fig.add_trace(
+                go.Box(
+                    x=xai_plot["importance_value"],
+                    y=xai_plot["feature_name"],
+                    orientation="h",
+                    boxpoints="all",
+                    jitter=0.5,
+                    pointpos=0,  # centers the points
+                    fillcolor="rgba(255,255,255,0)",
+                    line=dict(color="rgba(255,255,255,0)"),
+                    marker=dict(color="#5A92D8", size=4, line=dict(width=0)),
+                    showlegend=False,
+                )
+            )
             # Ocultando medianas e quartis
             fig.update_traces(whiskerwidth=0)
-            
+
             fig.update_layout(
-                yaxis=dict(categoryorder='array', categoryarray=top_global[::-1], tickfont=dict(size=8, color="gray")),
-                xaxis=dict(title=dict(text="Impacto na Saída", font=dict(size=8)), tickfont=dict(size=8, color="gray"), zeroline=True, zerolinecolor="gray")
+                yaxis=dict(
+                    categoryorder="array",
+                    categoryarray=top_global[::-1],
+                    tickfont=dict(size=8, color="gray"),
+                ),
+                xaxis=dict(
+                    title=dict(text="Impacto na Saída", font=dict(size=8)),
+                    tickfont=dict(size=8, color="gray"),
+                    zeroline=True,
+                    zerolinecolor="gray",
+                ),
             )
         else:
             fig.add_annotation(text="Sem dados de Features", showarrow=False)
@@ -125,39 +166,55 @@ def render_summary_card(df_filtered, selected_exp, sort_metric, panel_id, summar
         if not xai_bulk.empty:
             xai_filtered = xai_bulk[xai_bulk["model_id"].isin(df_filtered["exp_id"])]
             xai_filtered["abs_imp"] = xai_filtered["importance_value"].abs()
-            top_3_feats = xai_filtered.groupby("feature_name")["abs_imp"].mean().sort_values(ascending=False).head(3).index.tolist()
-            
+            top_3_feats = (
+                xai_filtered.groupby("feature_name")["abs_imp"]
+                .mean()
+                .sort_values(ascending=False)
+                .head(3)
+                .index.tolist()
+            )
+
             if len(top_3_feats) == 3:
                 # Pivot para ter features como colunas
-                pivot_df = xai_filtered.pivot(index="model_id", columns="feature_name", values="importance_value").reset_index()
+                pivot_df = xai_filtered.pivot(
+                    index="model_id", columns="feature_name", values="importance_value"
+                ).reset_index()
                 # Merge com df_filtered para pegar a métrica de cor
-                merged = pd.merge(pivot_df, df_filtered[["exp_id", sort_metric]], left_on="model_id", right_on="exp_id", how="inner")
-                
+                merged = pd.merge(
+                    pivot_df,
+                    df_filtered[["exp_id", sort_metric]],
+                    left_on="model_id",
+                    right_on="exp_id",
+                    how="inner",
+                )
+
                 f1, f2, f3 = top_3_feats[0], top_3_feats[1], top_3_feats[2]
-                fig.add_trace(go.Scatter3d(
-                    x=merged[f1],
-                    y=merged[f2],
-                    z=merged[f3],
-                    mode='markers',
-                    marker=dict(
-                        size=3,
-                        color=merged[sort_metric],
-                        colorscale='Viridis',
-                        opacity=0.8
-                    ),
-                    text=merged["exp_id"],
-                    hoverinfo="text"
-                ))
+                fig.add_trace(
+                    go.Scatter3d(
+                        x=merged[f1],
+                        y=merged[f2],
+                        z=merged[f3],
+                        mode="markers",
+                        marker=dict(
+                            size=3,
+                            color=merged[sort_metric],
+                            colorscale="Viridis",
+                            opacity=0.8,
+                        ),
+                        text=merged["exp_id"],
+                        hoverinfo="text",
+                    )
+                )
                 fig.update_layout(
                     scene=dict(
                         xaxis_title=dict(text=f1[:10], font=dict(size=8)),
                         yaxis_title=dict(text=f2[:10], font=dict(size=8)),
                         zaxis_title=dict(text=f3[:10], font=dict(size=8)),
                     ),
-                    margin=dict(l=0, r=0, b=0, t=0)
+                    margin=dict(l=0, r=0, b=0, t=0),
                 )
             else:
-                 fig.add_annotation(text="Não há features suficientes", showarrow=False)
+                fig.add_annotation(text="Não há features suficientes", showarrow=False)
         else:
             fig.add_annotation(text="Sem dados de Features", showarrow=False)
 
@@ -243,7 +300,7 @@ def render_summary_card(df_filtered, selected_exp, sort_metric, panel_id, summar
             ),
         )
 
-    elif summary_view == "Pareto":
+    elif summary_view == "PxR":
         fig.add_trace(
             go.Scatter(
                 x=df_filtered["test_precision_macro"],
@@ -276,7 +333,7 @@ def render_summary_card(df_filtered, selected_exp, sort_metric, panel_id, summar
             ),
         )
 
-    elif summary_view == "KPIs":
+    elif summary_view == "Num":
         fig.add_trace(
             go.Indicator(
                 mode="number",
@@ -319,7 +376,9 @@ def render_summary_card(df_filtered, selected_exp, sort_metric, panel_id, summar
     st.plotly_chart(fig, use_container_width=True, key=f"summary_hist_hz_{panel_id}")
 
 
-def render_horizontal_ribbon(df_filtered, sort_metric, current_dataset, panel_id, ribbon_mode="Métricas"):
+def render_horizontal_ribbon(
+    df_filtered, sort_metric, current_dataset, panel_id, ribbon_mode="Métricas"
+):
     """Renderiza a fita de experimentos com SCROLL HORIZONTAL NATIVO."""
 
     if df_filtered.empty:
@@ -377,8 +436,12 @@ def render_horizontal_ribbon(df_filtered, sort_metric, current_dataset, panel_id
                     if st.session_state.get("selected_exp") is None:
                         st.toast("Selecione um Modelo Primeiro (clicando no nome dele)")
                     else:
-                        st.session_state[f"open_deep_compare_{panel_id}"] = row["exp_id"]
-                        st.session_state[f"compare_dataset_{panel_id}"] = current_dataset
+                        st.session_state[f"open_deep_compare_{panel_id}"] = row[
+                            "exp_id"
+                        ]
+                        st.session_state[f"compare_dataset_{panel_id}"] = (
+                            current_dataset
+                        )
                         st.rerun()
             with c3:
                 if st.button(
@@ -408,7 +471,9 @@ def render_horizontal_ribbon(df_filtered, sort_metric, current_dataset, panel_id
                     categories = ["Sem Dados"] * 8
                     valores = [0] * 8
                 else:
-                    sorted_features = sorted(xai_data.items(), key=lambda item: abs(item[1]), reverse=True)[:8]
+                    sorted_features = sorted(
+                        xai_data.items(), key=lambda item: abs(item[1]), reverse=True
+                    )[:8]
                     categories = []
                     seen = set()
                     for f in sorted_features:
@@ -420,10 +485,12 @@ def render_horizontal_ribbon(df_filtered, sort_metric, current_dataset, panel_id
                             count += 1
                         seen.add(name)
                         categories.append(name)
-                        
+
                     raw_valores = [abs(f[1]) for f in sorted_features]
-                    max_val = max(raw_valores) if raw_valores and max(raw_valores) > 0 else 1
-                    valores = [v/max_val for v in raw_valores]
+                    max_val = (
+                        max(raw_valores) if raw_valores and max(raw_valores) > 0 else 1
+                    )
+                    valores = [v / max_val for v in raw_valores]
 
             fig = go.Figure(
                 data=go.Scatterpolar(
@@ -464,11 +531,13 @@ def render_horizontal_ribbon(df_filtered, sort_metric, current_dataset, panel_id
     # Handlers para os modais (Dialogs)
     if st.session_state.get(f"open_dialog_{panel_id}"):
         clicked_id = st.session_state[f"open_dialog_{panel_id}"]
-        clicked_dataset = st.session_state.get(f"dialog_dataset_{panel_id}", current_dataset)
+        clicked_dataset = st.session_state.get(
+            f"dialog_dataset_{panel_id}", current_dataset
+        )
         st.session_state[f"open_dialog_{panel_id}"] = False
         # Import lazy to avoid circular issues
         from views.view_xray import render_xray
-        
+
         # Recupera as informações deste experimento a partir do df_filtered
         row_data = df_filtered[df_filtered["exp_id"] == clicked_id]
         if row_data.empty:
@@ -478,11 +547,14 @@ def render_horizontal_ribbon(df_filtered, sort_metric, current_dataset, panel_id
 
     if st.session_state.get(f"open_deep_compare_{panel_id}"):
         compare_id = st.session_state[f"open_deep_compare_{panel_id}"]
-        compare_dataset = st.session_state.get(f"compare_dataset_{panel_id}", current_dataset)
+        compare_dataset = st.session_state.get(
+            f"compare_dataset_{panel_id}", current_dataset
+        )
         st.session_state[f"open_deep_compare_{panel_id}"] = False
-        
+
         from views.view_deepcomparison import render_deepcomparison
+
         base_id = st.session_state.get("selected_exp")
         base_dataset = st.session_state.get("selected_dataset")
-        
+
         render_deepcomparison(base_id, base_dataset, compare_id, compare_dataset)

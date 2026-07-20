@@ -7,6 +7,7 @@ import os
 
 st.set_page_config(layout="wide", page_title="Data Mining Viz")
 
+
 def get_default_panel(default_dataset="bateria01"):
     return {
         "id": os.urandom(4).hex(),
@@ -16,7 +17,7 @@ def get_default_panel(default_dataset="bateria01"):
         "sort_ascending": False,
         "top_n": 50,
         "adv_filters": {},
-        "ribbon_mode": "Métricas"
+        "ribbon_mode": "Métricas",
     }
 
 
@@ -28,55 +29,115 @@ def init_session_state(default_dataset="bateria01"):
         st.session_state["selected_exp"] = None
         st.session_state["selected_dataset"] = None
 
+
 @st.dialog("Filtros Avançados", width="large")
 def render_advanced_filters_dialog(panel, df_global):
-    panel_id = panel["id"]
     st.markdown("### Filtros Principais")
-    
+
     col1, col2, col3, col4 = st.columns([1, 1, 1, 0.6])
-    
+
     # Extrair valores únicos
     targets = list(df_global["target_strategy"].dropna().unique())
     splits = list(df_global["split_method"].dropna().unique())
     models = list(df_global["model_type"].dropna().unique())
-    
+
     with col1:
-        sel_targets = st.multiselect("Target Strategy", options=targets, default=panel["adv_filters"].get("target_strategy", []))
+        sel_targets = st.multiselect(
+            "Target Strategy",
+            options=targets,
+            default=panel["adv_filters"].get("target_strategy", []),
+        )
     with col2:
-        sel_splits = st.multiselect("Split Method", options=splits, default=panel["adv_filters"].get("split_method", []))
+        sel_splits = st.multiselect(
+            "Split Method",
+            options=splits,
+            default=panel["adv_filters"].get("split_method", []),
+        )
     with col3:
-        sel_models = st.multiselect("Model Type", options=models, default=panel["adv_filters"].get("model_type", []))
+        sel_models = st.multiselect(
+            "Model Type",
+            options=models,
+            default=panel["adv_filters"].get("model_type", []),
+        )
     with col4:
-        top_n = st.number_input("Top N (Lista):", min_value=1, max_value=5000, value=panel.get("top_n", 50), step=10)
+        top_n = st.number_input(
+            "Top N (Lista):",
+            min_value=1,
+            max_value=5000,
+            value=panel.get("top_n", 50),
+            step=10,
+        )
 
     st.markdown("### Filtros de Métricas (Ranges)")
-    
+
     def get_metric_range(col_name):
         return float(df_global[col_name].min()), float(df_global[col_name].max())
-        
+
     m1, m2, m3, m4 = st.columns(4)
     with m1:
-        rng_f1_test = st.slider("Test F1 Macro", min_value=0.0, max_value=1.0, value=panel["adv_filters"].get("test_f1_score_macro", (0.0, 1.0)), step=0.01)
+        rng_f1_test = st.slider(
+            "Test F1 Macro",
+            min_value=0.0,
+            max_value=1.0,
+            value=panel["adv_filters"].get("test_f1_score_macro", (0.0, 1.0)),
+            step=0.01,
+        )
     with m2:
-        rng_f1_val = st.slider("Val F1 Macro", min_value=0.0, max_value=1.0, value=panel["adv_filters"].get("val_f1_score_macro", (0.0, 1.0)), step=0.01)
+        rng_f1_val = st.slider(
+            "Val F1 Macro",
+            min_value=0.0,
+            max_value=1.0,
+            value=panel["adv_filters"].get("val_f1_score_macro", (0.0, 1.0)),
+            step=0.01,
+        )
     with m3:
-        rng_acc_test = st.slider("Test Accuracy", min_value=0.0, max_value=1.0, value=panel["adv_filters"].get("test_accuracy", (0.0, 1.0)), step=0.01)
+        rng_acc_test = st.slider(
+            "Test Accuracy",
+            min_value=0.0,
+            max_value=1.0,
+            value=panel["adv_filters"].get("test_accuracy", (0.0, 1.0)),
+            step=0.01,
+        )
     with m4:
-        rng_acc_val = st.slider("Val Accuracy", min_value=0.0, max_value=1.0, value=panel["adv_filters"].get("val_accuracy", (0.0, 1.0)), step=0.01)
-        
+        rng_acc_val = st.slider(
+            "Val Accuracy",
+            min_value=0.0,
+            max_value=1.0,
+            value=panel["adv_filters"].get("val_accuracy", (0.0, 1.0)),
+            step=0.01,
+        )
+
     m5, m6, m7 = st.columns(3)
     with m5:
-        rng_prec_test = st.slider("Test Precision", min_value=0.0, max_value=1.0, value=panel["adv_filters"].get("test_precision_macro", (0.0, 1.0)), step=0.01)
+        rng_prec_test = st.slider(
+            "Test Precision",
+            min_value=0.0,
+            max_value=1.0,
+            value=panel["adv_filters"].get("test_precision_macro", (0.0, 1.0)),
+            step=0.01,
+        )
     with m6:
-        rng_rec_test = st.slider("Test Recall", min_value=0.0, max_value=1.0, value=panel["adv_filters"].get("test_recall_macro", (0.0, 1.0)), step=0.01)
+        rng_rec_test = st.slider(
+            "Test Recall",
+            min_value=0.0,
+            max_value=1.0,
+            value=panel["adv_filters"].get("test_recall_macro", (0.0, 1.0)),
+            step=0.01,
+        )
     with m7:
-        rng_f1_w_test = st.slider("Test F1 Weighted", min_value=0.0, max_value=1.0, value=panel["adv_filters"].get("test_f1_score_weighted", (0.0, 1.0)), step=0.01)
+        rng_f1_w_test = st.slider(
+            "Test F1 Weighted",
+            min_value=0.0,
+            max_value=1.0,
+            value=panel["adv_filters"].get("test_f1_score_weighted", (0.0, 1.0)),
+            step=0.01,
+        )
 
     st.markdown("---")
     st.markdown("### Filtros Dinâmicos de Arquitetura e Hiperparâmetros")
-    
+
     dyn_cols = st.columns(3)
-    
+
     # Extrair todas as chaves de hyperparâmetros e configs
     param_keys = {}
     for _, row in df_global.iterrows():
@@ -87,16 +148,16 @@ def render_advanced_filters_dialog(panel, df_global):
                 if k not in param_keys:
                     param_keys[k] = set()
                 param_keys[k].add(str(m_type))
-        
+
     config_keys = set()
     for d in df_global["experiment_config_dict"].dropna():
         if "preprocessing" in d and isinstance(d["preprocessing"], dict):
             for k in d["preprocessing"].keys():
                 config_keys.add(f"preprocessing.{k}")
-                
+
     sel_dynamic = {}
     col_idx = 0
-    
+
     # Render parameters filters
     for key in sorted(list(param_keys.keys())):
         # Extrair valores unicos para esta chave
@@ -104,14 +165,18 @@ def render_advanced_filters_dialog(panel, df_global):
         for d in df_global["parameters_dict"].dropna():
             if key in d:
                 unique_vals.add(str(d[key]))
-        
+
         if len(unique_vals) > 0:
             with dyn_cols[col_idx % 3]:
                 models_context = ", ".join(sorted(list(param_keys[key])))
                 label = f"Param: {key} ({models_context})"
-                sel_dynamic[f"param_{key}"] = st.multiselect(label, options=sorted(list(unique_vals)), default=panel["adv_filters"].get(f"param_{key}", []))
+                sel_dynamic[f"param_{key}"] = st.multiselect(
+                    label,
+                    options=sorted(list(unique_vals)),
+                    default=panel["adv_filters"].get(f"param_{key}", []),
+                )
             col_idx += 1
-            
+
     # Render config filters
     for key in sorted(list(config_keys)):
         sub_key = key.split(".")[1]
@@ -120,13 +185,18 @@ def render_advanced_filters_dialog(panel, df_global):
             if "preprocessing" in d and sub_key in d["preprocessing"]:
                 val = d["preprocessing"][sub_key]
                 if isinstance(val, list):
-                    for v in val: unique_vals.add(str(v))
+                    for v in val:
+                        unique_vals.add(str(v))
                 else:
                     unique_vals.add(str(val))
-                    
+
         if len(unique_vals) > 0:
             with dyn_cols[col_idx % 3]:
-                sel_dynamic[f"config_{key}"] = st.multiselect(f"Config: {key}", options=sorted(list(unique_vals)), default=panel["adv_filters"].get(f"config_{key}", []))
+                sel_dynamic[f"config_{key}"] = st.multiselect(
+                    f"Config: {key}",
+                    options=sorted(list(unique_vals)),
+                    default=panel["adv_filters"].get(f"config_{key}", []),
+                )
             col_idx += 1
 
     col_btn1, col_btn2 = st.columns(2)
@@ -152,6 +222,8 @@ def render_advanced_filters_dialog(panel, df_global):
             for k, v in sel_dynamic.items():
                 panel["adv_filters"][k] = v
             st.rerun()
+
+
 @st.fragment
 def render_comparative_panel(idx, panel, available_datasets, metric_labels):
     panel_id = panel["id"]
@@ -167,12 +239,14 @@ def render_comparative_panel(idx, panel, available_datasets, metric_labels):
         panel["dataset"] = st.session_state[ds_key]
 
     # Filtra o df global para o dataset atual do painel ANTES de extrair as listas únicas
-    current_dataset = panel.get("dataset", available_datasets[0] if available_datasets else None)
-    df_panel_filtered = df_global[df_global["dataset_version"] == current_dataset] if current_dataset else df_global
-    
-    targets = ["Target Strategy"] + list(df_panel_filtered["target_strategy"].dropna().unique())
-    splits = ["Split Method"] + list(df_panel_filtered["split_method"].dropna().unique())
-    models = ["Model Type"] + list(df_panel_filtered["model_type"].dropna().unique())
+    current_dataset = panel.get(
+        "dataset", available_datasets[0] if available_datasets else None
+    )
+    df_panel_filtered = (
+        df_global[df_global["dataset_version"] == current_dataset]
+        if current_dataset
+        else df_global
+    )
 
     # Colunas principais do Layout de Painel (De-duplicando colunas horizontais para isolar a fita)
     col_left, col_right = st.columns([2.3, 7.7])
@@ -226,7 +300,12 @@ def render_comparative_panel(idx, panel, available_datasets, metric_labels):
                             panel["sort_ascending"] = False
                         st.rerun()
 
-            if st.button("⚙️", help="Filtros Avançados", key=f"btn_filter_{panel_id}", use_container_width=True):
+            if st.button(
+                "⚙️",
+                help="Filtros Avançados",
+                key=f"btn_filter_{panel_id}",
+                use_container_width=True,
+            ):
                 render_advanced_filters_dialog(panel, df_panel_filtered)
 
             if "ribbon_mode" not in panel:
@@ -245,10 +324,19 @@ def render_comparative_panel(idx, panel, available_datasets, metric_labels):
             with st.popover("📊", use_container_width=True):
                 st.markdown("**Visão Global:**")
                 if panel["ribbon_mode"] == "Métricas":
-                    view_opts = ["Densidade", "Overfitting", "Pareto", "KPIs"]
+                    view_opts = [
+                        "Densidade",
+                        "Overfitting",
+                        "PxR",
+                        "Num",
+                    ]
                 else:
-                    view_opts = ["Densidade (Features)", "SHAP Summary", "Matrix Dinâmica"]
-                
+                    view_opts = [
+                        "Densidade (Features)",
+                        "SHAP",
+                        "Matrix Dinâmica",
+                    ]
+
                 # Certifica que a view selecionada é válida para o modo
                 if panel.get("summary_view") not in view_opts:
                     panel["summary_view"] = view_opts[0]
@@ -281,34 +369,49 @@ def render_comparative_panel(idx, panel, available_datasets, metric_labels):
 
         # Aplica os filtros avançados
         adv = panel.get("adv_filters", {})
-        
+
         if adv.get("target_strategy"):
-            df_filtered = df_filtered[df_filtered["target_strategy"].isin(adv["target_strategy"])]
+            df_filtered = df_filtered[
+                df_filtered["target_strategy"].isin(adv["target_strategy"])
+            ]
         if adv.get("split_method"):
-            df_filtered = df_filtered[df_filtered["split_method"].isin(adv["split_method"])]
+            df_filtered = df_filtered[
+                df_filtered["split_method"].isin(adv["split_method"])
+            ]
         if adv.get("model_type"):
             df_filtered = df_filtered[df_filtered["model_type"].isin(adv["model_type"])]
-            
+
         # Applica ranges dinamicos das metricas
         metrics = [
-            "test_f1_score_macro", "val_f1_score_macro",
-            "test_accuracy", "val_accuracy",
-            "test_precision_macro", "test_recall_macro", "test_f1_score_weighted"
+            "test_f1_score_macro",
+            "val_f1_score_macro",
+            "test_accuracy",
+            "val_accuracy",
+            "test_precision_macro",
+            "test_recall_macro",
+            "test_f1_score_weighted",
         ]
         for m in metrics:
             if m in adv:
                 m_min, m_max = adv[m]
-                df_filtered = df_filtered[(df_filtered[m] >= m_min) & (df_filtered[m] <= m_max)]
-            
+                df_filtered = df_filtered[
+                    (df_filtered[m] >= m_min) & (df_filtered[m] <= m_max)
+                ]
+
         # Filtros Dinâmicos de Hiperparâmetros
         for k, v in adv.items():
             if df_filtered.empty:
                 break
             if k.startswith("param_") and v:
                 param_key = k.replace("param_", "")
-                df_filtered = df_filtered[df_filtered["parameters_dict"].apply(lambda d: str(d.get(param_key)) in v)]
+                df_filtered = df_filtered[
+                    df_filtered["parameters_dict"].apply(
+                        lambda d: str(d.get(param_key)) in v
+                    )
+                ]
             if k.startswith("config_") and v:
                 sub_key = k.replace("config_preprocessing.", "")
+
                 def check_config(d):
                     if "preprocessing" in d and sub_key in d["preprocessing"]:
                         val = d["preprocessing"][sub_key]
@@ -316,13 +419,16 @@ def render_comparative_panel(idx, panel, available_datasets, metric_labels):
                             return any(str(x) in v for x in val)
                         return str(val) in v
                     return False
-                df_filtered = df_filtered[df_filtered["experiment_config_dict"].apply(check_config)]
+
+                df_filtered = df_filtered[
+                    df_filtered["experiment_config_dict"].apply(check_config)
+                ]
 
         asc = panel.get("sort_ascending", False)
         df_filtered = df_filtered.sort_values(by=panel["sort_metric"], ascending=asc)
-        
+
         df_filtered_full = df_filtered.copy()
-        
+
         top_n = panel.get("top_n", 50)
         df_filtered = df_filtered.head(top_n)
 
@@ -335,20 +441,20 @@ def render_comparative_panel(idx, panel, available_datasets, metric_labels):
                 panel["summary_view"],
                 panel["ribbon_mode"],
                 panel["dataset"],
-                df_filtered_full
+                df_filtered_full,
             )
 
     with col_right:
         # Filtra para passar os dados corretos e renderiza a fita de radar separada verticalmente
         df_filtered_right = df_filtered.copy()
-        
+
         # Sempre renderiza a fita horizontal no painel direito
         render_horizontal_ribbon(
-            df_filtered_right, 
-            panel["sort_metric"], 
-            panel["dataset"], 
+            df_filtered_right,
+            panel["sort_metric"],
+            panel["dataset"],
             panel_id,
-            panel["ribbon_mode"]
+            panel["ribbon_mode"],
         )
 
     st.markdown("---")
@@ -495,9 +601,10 @@ def main():
     if len(st.session_state["panels"]) < 5:
         if st.button("➕ Adicionar Painel Comparativo", type="tertiary"):
             import copy
+
             base_panel = st.session_state["panels"][0]
             new_panel = get_default_panel(available_datasets[0])
-            
+
             # Copiar as configurações de exibição e filtros do primeiro painel
             new_panel["dataset"] = base_panel["dataset"]
             new_panel["sort_metric"] = base_panel["sort_metric"]
@@ -506,7 +613,7 @@ def main():
             new_panel["top_n"] = base_panel.get("top_n", 50)
             new_panel["adv_filters"] = copy.deepcopy(base_panel["adv_filters"])
             new_panel["ribbon_mode"] = base_panel.get("ribbon_mode", "Métricas")
-            
+
             st.session_state["panels"].append(new_panel)
             st.rerun()
 
