@@ -77,7 +77,15 @@ def render_xray(df_report, exp_id_selecionado):
     with col_cm:
         st.markdown("**Matriz de Confusão**")
         try:
-            cm = json.loads(row["confusion_matrix"])
+            if isinstance(row["confusion_matrix"], str):
+                try:
+                    import yaml
+                    cm = yaml.safe_load(row["confusion_matrix"])
+                except:
+                    cm = json.loads(row["confusion_matrix"])
+            else:
+                cm = row["confusion_matrix"]
+
             fig_cm = px.imshow(
                 cm,
                 text_auto=True,
@@ -100,7 +108,7 @@ def render_xray(df_report, exp_id_selecionado):
         col_params, col_table = st.columns([3, 7])
         with col_params:
             st.write("**Parâmetros do Modelo**")
-            st.json(row["parameters"])
+            st.json(row.get("parameters_dict", row["parameters"]))
         with col_table:
             st.write("**Tabela de Dados Brutos**")
             df_row = pd.DataFrame([row])

@@ -10,134 +10,266 @@
 
 # ------------------------------------------------------------------------------
 # 1. CONFIGURAÇÃO DE HARDWARE & RECURSOS
+#  cpu_workers: "Qtd máxima de processos concorrentes alocados para a CPU (Recomendado: Núcleos Físicos - 1)"
+#  gpu_workers: "Qtd de workers simultâneos por GPU física disposta na máquina"
+#  chunk_size: "Tamanho do lote. Recomendado: Total_Modelos / (5 * (cpu_workers + gpu_workers))"
 # ------------------------------------------------------------------------------
-_help_hardware_config:
-  cpu_workers: "Qtd máxima de processos concorrentes alocados para a CPU (Recomendado: Núcleos Físicos - 1)"
-  gpu_workers: "Qtd de workers simultâneos por GPU física disposta na máquina"
-  chunk_size: "Tamanho do lote. Recomendado: Total_Modelos / (5 * (cpu_workers + gpu_workers))"
-
 hardware_config:
-  cpu_workers: 13
+  cpu_workers: 13  # Número de processos paralelos em CPU (Int ex: 1 a 64)
   gpu_workers:
-    - 3  # GPU 0 (ex: RTX 3090)
-  chunk_size: 15
+    - 3  # GPU 0: Quantidade de processos alocados na placa de vídeo (Int ex: 1 a 8)
+  chunk_size: 15  # Tamanho do lote de experimentos processados por rodada de memória (Int ex: 10 a 50)
 
-# Identificador da bateria no banco de dados SQLite. 
+# Identificador da bateria no banco de dados SQLite.
 # NOTA: Mantenha este id como referência para evitar rodar todas as combinações de uma vez!
-bateria_id: referencia_total_yaml_nao_rodar
+bateria_id: referencia_total_yaml_nao_rodar  # String identificadora da bateria no banco
 
-# Datasets de entrada disponíveis em data/dataset/
+# Datasets de entrada disponíveis no diretório data/dataset/
 datasets:
-  - dataset002
+  - dataset002  # Opções válidas: [dataset001, dataset002, dataset003]
 
 # ------------------------------------------------------------------------------
-# 2. ESTRATÉGIAS DE TARGET (RODULAGEM / ALVOS DE MERCADO)
+# 2. ESTRATÉGIAS DE TARGET (ROTULAGEM / ALVOS DE MERCADO)
+# ------------------------------------------------------------------------------
+# Os targets definem a "pergunta" que o modelo tenta responder. Cada alvo abaixo
+# rotula o histórico em valores numéricos (geralmente 0 ou 1, ou multiclasse).
 # ------------------------------------------------------------------------------
 target_strategies:
-  # --- ALVOS TRADICIONAIS (CLASSIFICAÇÃO DIRETA DE PREÇO) ---
-  - name: outperformance
-    horizon_days: 10
-    threshold: 0.02 # Ação precisa superar a média do mercado em +2% em 10 dias
 
+  # ----------------------------------------------------------------------------
+  # TARGET 1: Outperformance (Superação de Mercado)
+  # ----------------------------------------------------------------------------
+  # O que faz: Mede se a ação vai performar acima da média do mercado (Benchmark)
+  #            acrescida de uma margem de segurança (threshold).
+  # Significado das Respostas:
+  #   - 1: A ação superou a média do mercado + threshold no período de N dias.
+  #   - 0: A ação performou abaixo do mercado ou emparelhou com ele.
+  # Exemplo Real: Em 10 dias, a PETR4 subiu +5% enquanto a média da bolsa subiu +2%.
+  #               A diferença (+3%) superou o threshold (+2%). Alvo = 1.
+  # ----------------------------------------------------------------------------
+  - name: outperformance  # Nome único do gerador de alvo. Opções válidas: [outperformance, volatility_regime, directional_regime, fundamental_turnaround, drawdown_risk, meta_labeling, triple_barrier, vol_adjusted_return, cross_sectional_quantiles, trend_scanning, squeeze_breakout]
+    horizon_days: 10      # Janela de dias úteis futuros para projeção (Int ex: 1 a 120)
+    threshold: 0.02       # Margem mínima de retorno percentual acima do benchmark (Float ex: 0.01 = 1%, 0.05 = 5%)
+
+  # ----------------------------------------------------------------------------
+  # TARGET 2: Volatility Regime (Regime de Volatilidade)
+  # ----------------------------------------------------------------------------
+  # O que faz: Classifica se o ativo vai entrar em uma fase de alta turbulência
+  #            e variação de preço comparado à sua própria média de volatilidade.
+  # Significado das Respostas:
+  #   - 1: Alta Volatilidade Futura (Oportunidade de Swing Trade / Risco elevado).
+  #   - 0: Baixa Volatilidade Futura (Mercado calmo, consolidado ou de lado).
+  # Exemplo Real: A volatilidade de 21d da VALE3 era 1.5%. Nos 5 dias seguintes
+  #               ela saltou para 3.2%. Houve alteração no regime. Alvo = 1.
+  # ----------------------------------------------------------------------------
   - name: volatility_regime
-    horizon_days: 5 # Classifica o regime futuro de volatilidade (Alta vs Baixa Vol)
+    horizon_days: 5  # Janela de projeção da mudança de volatilidade em dias úteis (Int ex: 3, 5, 10)
 
+  # ----------------------------------------------------------------------------
+  # TARGET 3: Directional Regime (Regime Direcional de Curto Prazo)
+  # ----------------------------------------------------------------------------
+  # O que faz: Classificação Multiclasse do movimento absoluto de preço em dias.
+  # Significado das Respostas:
+  #   - 2 (Alta): O preço subiu acima de +threshold (+5%).
+  #   - 1 (Lateral): O preço oscilou dentro da banda neutra (entre -5% e +5%).
+  #   - 0 (Baixa): O preço caiu abaixo de -threshold (-5%).
+  # Exemplo Real: ITUB4 subiu +6.5% em 5 dias úteis, rompendo a barreira de +5%. Alvo = 2 (Alta).
+  # ----------------------------------------------------------------------------
   - name: directional_regime
-    horizon_days: 5
-    threshold: 0.05 # Classifica tendência de curto prazo (+5% Alta / -5% Baixa / Lateral)
+    horizon_days: 5   # Janela temporal curta para captura de tendência (Int ex: 3 a 10)
+    threshold: 0.05   # Percentual simétrico de variação mínima para caracterizar tendência (Float ex: 0.03, 0.05)
 
+  # ----------------------------------------------------------------------------
+  # TARGET 4: Directional Regime (Regime Direcional de Longo Prazo / Macrotendência)
+  # ----------------------------------------------------------------------------
+  # O que faz: Captura grandes ciclos e tendências de longo prazo (60 dias úteis).
+  # Significado das Respostas:
+  #   - 2 (Alta): Movimento forte de alta acima de +20%.
+  #   - 1 (Lateral): Consolidação de longo prazo.
+  #   - 0 (Baixa): Tendência de baixa (Bear Market) com queda superior a -20%.
+  # Exemplo Real: MGLU3 desvalorizou -25% ao longo de 60 dias. Alvo = 0 (Baixa).
+  # ----------------------------------------------------------------------------
   - name: directional_regime
-    horizon_days: 60
-    threshold: 0.20 # Classifica tendência de longo prazo (+20% Alta / -20% Baixa / Lateral)
+    horizon_days: 60  # Janela temporal longa (Int ex: 20, 60, 120)
+    threshold: 0.20   # Threshold para movimentos macro (Float ex: 0.15, 0.20)
 
+  # ----------------------------------------------------------------------------
+  # TARGET 5: Fundamental Turnaround (Virada Operacional Contábil)
+  # ----------------------------------------------------------------------------
+  # O que faz: Cruza os dados da CVM (balanços) com o preço de mercado para detectar
+  #            recuperações de empresas que estavam mal e voltaram a dar lucro.
+  # Significado das Respostas:
+  #   - 1: Empresa apresentou virada de margem/lucro no balanço E a ação valorizou.
+  #   - 0: Empresa continuou estagnada, com prejuízo ou sem reação de preço.
+  # Exemplo Real: WEGE3 vinha de 2 trimestres fracos, divulgou balanço CVM com salto de
+  #               +30% no Lucro Líquido e a ação valorizou em 120 dias. Alvo = 1.
+  # ----------------------------------------------------------------------------
   - name: fundamental_turnaround
-    horizon_days: 120 # Virada de chave fundamentalista (Trimestral/Semestral)
+    horizon_days: 120  # Janela ampla compatível com a divulgação de balanços trimestrais (Int ex: 60, 120)
 
+  # ----------------------------------------------------------------------------
+  # TARGET 6: Drawdown Risk (Alerta de Risco de Queda Abrupta)
+  # ----------------------------------------------------------------------------
+  # O que faz: Modelo de Gestão de Risco focado em prever quedas severas iminentes.
+  # Significado das Respostas:
+  #   - 1: Perigo! A ação sofrerá uma perda >= threshold nos próximos N dias.
+  #   - 0: Segurança. Sem risco de queda abrupta na janela temporal.
+  # Exemplo Real: BBDC4 sofre um evento de vendas e cai -4% em 4 dias. Como superou
+  #               o limite de risco (-3%), o alerta vermelho é acionado. Alvo = 1.
+  # ----------------------------------------------------------------------------
   - name: drawdown_risk
-    horizon_days: 4
-    threshold: 0.03 # Alerta de risco de queda abrupta (Drawdown de no mínimo 3% em 4d)
+    horizon_days: 4   # Janela ultra-curta para alertas de colapso de preço (Int ex: 2, 4, 5)
+    threshold: 0.03   # Queda percentual mínima para considerar como risco de drawdown (Float ex: 0.03 = 3%)
 
-  # --- ALVOS AVANÇADOS (ENGENHARIA QUANTITATIVA & META-LABELING) ---
-  # Meta-Labeling: IA atua como "Juiz" filtrando se uma compra disparada pelo indicador técnico será lucrativa
+  # ----------------------------------------------------------------------------
+  # TARGET 7: Meta-Labeling sobre RSI (Filtro Inteligente de Reversão à Média)
+  # ----------------------------------------------------------------------------
+  # O que faz: Aplica a teoria de Marcos López de Prado. Um indicador primário (RSI)
+  #            aciona o gatilho, e a IA decide se autoriza ou rejeita a compra.
+  # Significado das Respostas:
+  #   - 1 (Aprovado): O RSI caiu abaixo de 25 E a compra gerou lucro >= profit_threshold.
+  #   - 0 (Rejeitado): O RSI caiu abaixo de 25 MAS a compra deu prejuízo ou lucro pífio.
+  # Exemplo Real: O RSI da PRIO3 cai para 22 (Sinal Primário = SIM). O Meta-Model prevê
+  #               se nos 10 dias seguintes a ação subirá pelo menos +2%. Se sim, Alvo = 1.
+  # ----------------------------------------------------------------------------
+  - name: meta_labeling
+    horizon_days: 10          # Horizonte de tempo para avaliar o sucesso do trade (Int ex: 5, 10, 15)
+    primary_signal_col: RSI_14d  # Coluna do indicador primário. Opções válidas: [RSI_14d, MACD_Hist, Bollinger_Width_21d, Momentum_21d, Volatilidade_21d, Volume_Anomaly_21d, ROE_Calculado_zscore_setorial, P_L_Calculado, P_VP_Calculado]
+    primary_signal_cond: "<"  # Operador lógico de comparação. Opções válidas: ["<", ">", "<=", ">=", "==", "!="]
+    primary_signal_val: 25    # Valor numérico de corte do sinal (Float/Int ex: 25 para RSI, 0 para MACD)
+    profit_threshold: 0.02    # Retorno líquido mínimo necessário para aprovar o trade (Float ex: 0.02 = 2%)
+
+  # ----------------------------------------------------------------------------
+  # TARGET 8: Meta-Labeling sobre MACD (Filtro Inteligente de Seguimento de Tendência)
+  # ----------------------------------------------------------------------------
+  # O que faz: Avalia a qualidade do sinal de cruzamento de alta do MACD Histograma.
+  # Significado das Respostas:
+  #   - 1 (Aprovado): O MACD cruzou acima de 0 E a operação gerou lucro real.
+  #   - 0 (Falso Rompimento): O MACD cruzou acima de 0 MAS o preço caiu logo em seguida.
+  # Exemplo Real: O histograma do MACD da BBAS3 fica positivo. A IA avalia o contexto
+  #               macro e autoriza o trade caso veja alta probabilidade de lucro. Alvo = 1.
+  # ----------------------------------------------------------------------------
   - name: meta_labeling
     horizon_days: 10
-    primary_signal_col: RSI_14d
-    primary_signal_cond: "<"
-    primary_signal_val: 25 # Compra acionada quando RSI entra em sobre-venda extrema (< 25)
-    profit_threshold: 0.02 # Só considera sucesso se o lucro exceder 2%
-
-  - name: meta_labeling
-    horizon_days: 10
-    primary_signal_col: MACD_Hist
+    primary_signal_col: MACD_Hist  # Coluna do indicador primário
     primary_signal_cond: ">"
-    primary_signal_val: 0 # Compra acionada em cruzamento de alta do MACD Histograma
+    primary_signal_val: 0
     profit_threshold: 0.02
 
-  # Triple Barrier Method (Prado): Barreira Tripla (Take Profit, Stop Loss e Limite de Tempo)
+  # ----------------------------------------------------------------------------
+  # TARGET 9: Triple Barrier Method (Método da Barreira Tripla de Prado)
+  # ----------------------------------------------------------------------------
+  # O que faz: Avalia a dinâmica real de trading com Take Profit (alta), Stop Loss
+  #            (baixa) e Limite de Tempo, ajustados pela volatilidade dinâmica do ativo.
+  # Significado das Respostas:
+  #   - 1 (Vitória): O preço tocou na barreira de Take Profit antes de tocar no Stop Loss.
+  #   - 0 (Derrota/Empate): O preço tocou no Stop Loss primeiro ou o tempo estourou.
+  # Exemplo Real: USIM5 tem volatilidade de 2%. Take Profit é +4% (2.0x) e Stop Loss é
+  #               -2% (1.0x). A ação atinge +4% no 8º dia sem cair -2%. Alvo = 1.
+  # ----------------------------------------------------------------------------
   - name: triple_barrier
-    horizon_days: 20 # Limite temporal de 20 dias úteis
-    pt_sl_ratio:
-      - 2.0 # Multiplicador da volatilidade para Take Profit (Ganho = 2x Volatilidade)
-      - 1.0 # Multiplicador da volatilidade para Stop Loss (Perda = 1x Volatilidade)
+    horizon_days: 20  # Dias limites até a expiração da barreira temporal (Int ex: 10, 15, 20)
+    pt_sl_ratio:      # Multiplicadores dinâmicos [Take_Profit, Stop_Loss] da volatilidade 21d
+      - 2.0  # Multiplicador do Take Profit (Float ex: 1.5, 2.0)
+      - 1.0  # Multiplicador do Stop Loss (Float ex: 1.0, 1.5)
 
-  # Retorno Ajustado pelo Risco (Sharpe Ratio futuro)
+  # ----------------------------------------------------------------------------
+  # TARGET 10: Volatility-Adjusted Return (Retorno Ajustado pelo Risco / Sharpe)
+  # ----------------------------------------------------------------------------
+  # O que faz: Mede a eficiência do movimento. Não basta subir, tem que subir com
+  #            baixa volatilidade (Sharpe Ratio futuro superior ao threshold).
+  # Significado das Respostas:
+  #   - 1: Excelente Retorno Ajustado ao Risco (Movimento consistente e seguro).
+  #   - 0: Retorno fraco ou movimento altamente errático e perigoso.
+  # Exemplo Real: RENT3 subiu +8% em 10 dias com oscilações diárias mínimas (Sharpe = 3.5).
+  #               Como 3.5 >= 0.8, o Alvo = 1.
+  # ----------------------------------------------------------------------------
   - name: vol_adjusted_return
-    horizon_days: 10
-    sharpe_threshold: 0.8 # Classifica positivo se o Retorno/Volatilidade for superior a 0.8
+    horizon_days: 10     # Período de cálculo do Sharpe futuro (Int ex: 5, 10, 21)
+    sharpe_threshold: 0.8  # Razão de Sharpe mínima futura para aprovar o movimento (Float ex: 0.5, 0.8, 1.0)
 
-  # Classificação em Quantis Cross-Sectional (Decis)
+  # ----------------------------------------------------------------------------
+  # TARGET 11: Cross-Sectional Quantiles (Classificação Relativa em Decis)
+  # ----------------------------------------------------------------------------
+  # O que faz: Compara o desempenho da ação contra todas as outras ações da bolsa no mesmo dia.
+  # Significado das Respostas:
+  #   - 1: A ação ficou no Top Decil (Top 10% das maiores altas do mercado no dia).
+  #   - 0: A ação ficou no meio da média ou entre as piores do dia.
+  # Exemplo Real: Das 100 ações negociadas na B3 em 15/03, a EMBR3 teve a 4ª maior alta.
+  #               Ela pertence ao Top 10%. Alvo = 1.
+  # ----------------------------------------------------------------------------
   - name: cross_sectional_quantiles
-    horizon_days: 5
-    quantiles: 10 # Isola os 10% melhores ativos da bolsa em relação aos pares no mesmo dia
+    horizon_days: 5  # Janela de comparação do retorno relativo (Int ex: 1, 5, 10)
+    quantiles: 10    # Número de divisões do ranking cross-sectional (Int ex: 5 para Quintis/20%, 10 para Decis/10%)
 
-  # Trend Scanning (Varredura de Regressão Temporal para capturar tendências limpas)
+  # ----------------------------------------------------------------------------
+  # TARGET 12: Trend Scanning (Varredura de Regressão de Tendência Limpa)
+  # ----------------------------------------------------------------------------
+  # O que faz: Ajusta regressões lineares em janelas móveis para encontrar a direção de
+  #            tendência com maior significância estatística (t-statistic do slope).
+  # Significado das Respostas:
+  #   - 1: Tendência de alta limpa e estatisticamente comprovada.
+  #   - 0: Ruído de preço sem tendência clara.
+  # Exemplo Real: CPLE6 engrena um canal de alta de 10 dias constante e sem ruído.
+  #               O teste t-student confirma alta confiabilidade na tendência. Alvo = 1.
+  # ----------------------------------------------------------------------------
   - name: trend_scanning
-    horizon_days: 10 # Janela de regressão linear deslizante
+    horizon_days: 10  # Janela móvel de ajuste da regressão linear (Int ex: 10, 21)
 
-  # Squeeze Breakout (Compressão de Volatilidade nas Bandas de Bollinger seguida de rompimento)
+  # ----------------------------------------------------------------------------
+  # TARGET 13: Squeeze Breakout (Compressão das Bandas seguida de Rompimento)
+  # ----------------------------------------------------------------------------
+  # O que faz: Captura a física clássica do mercado: compressão extrema da volatilidade
+  #            (Bandas de Bollinger estreitas) seguida por um rompimento explosivo.
+  # Significado das Respostas:
+  #   - 1: Rompimento confirmado com expansão de volatilidade e valorização >= threshold.
+  #   - 0: Sem compressão prévia ou sem rompimento de preço.
+  # Exemplo Real: SUZB3 passou 15 dias acumulando de lado com a largura da Banda em mínima.
+  #               No 16º dia o volume dispara e o preço rompe +4% para cima. Alvo = 1.
+  # ----------------------------------------------------------------------------
   - name: squeeze_breakout
-    horizon_days: 10
-    threshold: 0.03 # Exige expansão da banda + movimento explosivo de 3%
+    horizon_days: 10  # Janela de verificação pós-rompimento em dias úteis (Int ex: 5, 10, 15)
+    threshold: 0.03   # Magnitude mínima da explosão de preço pós-squeeze (Float ex: 0.02 = 2%, 0.04 = 4%)
 
 # ------------------------------------------------------------------------------
 # 3. MÉTODOS DE DIVISÃO TEMPORAL (SPLIT / ANTI-DATA LEAKAGE)
 # ------------------------------------------------------------------------------
 split_configs:
   # Time Series Purged Cross-Validation (Expurgo de dados entre blocos de treino/teste)
-  - method: tsp
-    n_splits: 5 # Divide o histórico em 5 blocos temporais sequenciais com Purging
+  - method: tsp     # Método de partição temporal. Opções válidas: [tsp, temporal_holdout]
+    n_splits: 5     # Quantidade de partições temporais com purging (Int ex: 3, 5, 10)
 
   # Temporal Holdout Clássico (Divisão Cronológica Rígida)
   - method: temporal_holdout
-    train_ratio: 0.70 # 70% Treino
-    val_ratio: 0.15   # 15% Validação (15% restante automático para Teste)
+    train_ratio: 0.70  # Proporção do histórico destinada a Treino (Float ex: 0.60 a 0.80)
+    val_ratio: 0.15    # Proporção do histórico destinada a Validação (Float ex: 0.10 a 0.20)
 
 # ------------------------------------------------------------------------------
 # 4. PIPELINE DE PRÉ-PROCESSAMENTO & LIMPEZA DE DADOS
 # ------------------------------------------------------------------------------
 preprocessing:
-  # Tratamento de valores infinitos
+  # Tratamento de valores infinitos (+/- Inf)
   inf_handling:
-    - replace_nan # Substitui +/- Inf por NaNs para serem imputados em seguida
+    - replace_nan  # Substitui infinitos por NaNs para tratamento posterior. Opções válidas: [replace_nan]
 
   # Estratégias de Imputação de Dados Faltantes (NaNs)
   imputation:
-    - ticker_median # Imputa a mediana histórica daquela específica ação (Evita contaminação)
-    # - fill_zero   # Substitui NaNs por 0 (Útil para indicadores de volume sem dados)
+    - ticker_median  # Imputa a mediana histórica do próprio ativo. Opções válidas: [ticker_median, fill_zero, mean, median]
+    # - fill_zero    # Substitui NaNs por 0 (Útil para volume/balanços zerados)
 
   # Tratamento de Outliers (Valores Extremos)
   outlier_handling:
-    - clip_95_5 # Trunca valores extremos nos percentis 5% e 95%
-    # - none    # Mantém os outliers intactos
+    - clip_95_5  # Trunca valores nos percentis 5% e 95%. Opções válidas: [clip_95_5, none, zscore_clip]
+    # - none     # Mantém os outliers intactos sem truncamento
 
-  # Normalização e Escalonamento
+  # Normalização e Escalonamento de Escala
   scaling:
-    - robust   # RobustScaler: Usado para lidar com finanças devido às caudas longas
-    - standard # StandardScaler: Média 0 e Desvio Padrão 1
-    # - none     # Sem normalização (Ideal se for rodar apenas modelos baseados em Árvores)
+    - robust    # RobustScaler: Usa mediana/IQR, ideal para finanças com caudas longas. Opções válidas: [robust, standard, none, minmax]
+    - standard  # StandardScaler: Transforma para média 0 e desvio padrão 1
+    # - none      # Sem normalização (Recomendado se for usar puramente modelos baseados em Árvores)
 
 # ------------------------------------------------------------------------------
-# 5. MODELOS & DADOS DE HIPERPARÂMETROS (ESPECIFICAÇÕES DOS ESTIMADORES)
+# 5. MODELOS & HIPERPARÂMETROS (ESPECIFICAÇÕES DOS ESTIMADORES)
 # ------------------------------------------------------------------------------
 models:
 
@@ -145,75 +277,75 @@ models:
   # XGBOOST (Gradient Boosted Trees - Extremamente rápido em GPU)
   # ----------------------------------------------------------------------------
   xgboost:
-    pref_queue: gpu_exclusive # Força execução exclusiva em GPU
+    pref_queue: gpu_exclusive  # Fila de hardware preferencial. Opções válidas: [gpu_exclusive, gpu, cpu_exclusive, cpu]
     
-    n_estimators: # Quantidade máxima de árvores sequenciais
+    n_estimators: # Quantidade máxima de árvores sequenciais acumuladas (Int ex: 100 a 1000)
       - 300
       - 500
     
-    max_depth: # Profundidade máxima de cada árvore
+    max_depth: # Profundidade máxima de cada árvore (Int ex: 3 a 15)
       - 7
       - 9
       - 12
     
-    learning_rate: # Taxa de aprendizado / Encolhimento do passo (eta)
+    learning_rate: # Taxa de aprendizado/Encolhimento de passo eta (Float ex: 0.01 a 0.3)
       - 0.05
     
-    subsample: # Porcentagem de linhas (amostras) sorteadas por árvore
+    subsample: # Porcentagem de linhas/amostras sorteadas por árvore (Float ex: 0.5 a 1.0)
       - 0.7
     
-    colsample_bytree: # Porcentagem de colunas (features) sorteadas por árvore
+    colsample_bytree: # Porcentagem de colunas/features sorteadas por árvore (Float ex: 0.5 a 1.0)
       - 0.7
     
-    reg_alpha: # Regularização L1 (Lasso) - Zera features irrelevantes na folha
+    reg_alpha: # Regularização L1 (Lasso) - Zera pesos irrelevantes nas folhas (Float ex: 0.0 a 10.0)
       - 0.0
       - 0.1
     
-    reg_lambda: # Regularização L2 (Ridge) - Suaviza os pesos das folhas contra overfitting
+    reg_lambda: # Regularização L2 (Ridge) - Suaviza pesos nas folhas contra overfitting (Float ex: 0.0 a 10.0)
       - 1.0
       - 7.0
     
-    drop_feat: # Seleção/Redução de dimensionalidade
+    drop_feat: # Seleção ou redução prévia de features. Opções válidas: [none, top_k, pca]
       - type: top_k
-        k: 40
+        k: 40  # Quantidade de colunas mais importantes a reter (Int ex: 20, 40, 60)
       - type: pca
-        k: 40
-        n_components: 3
+        k: 40             # Colunas selecionadas antes do PCA
+        n_components: 3   # Componentes principais a gerar (Int ex: 2, 3, 5)
       - none
 
   # ----------------------------------------------------------------------------
-  # LIGHTGBM (Light Gradient Boosting Machine - Alta velocidade e folhas com suporte a categorias)
+  # LIGHTGBM (Light Gradient Boosting Machine - Histograma ultra-rápido)
   # ----------------------------------------------------------------------------
   lightgbm:
-    pref_queue: gpu_exclusive
+    pref_queue: gpu_exclusive  # Fila de hardware preferencial. Opções válidas: [gpu_exclusive, gpu, cpu_exclusive, cpu]
     
-    n_estimators:
+    n_estimators: # Quantidade de árvores (Int ex: 100 a 1000)
       - 400
     
-    max_depth:
+    max_depth: # Profundidade máxima (Int ex: -1 para ilimitado, 5 a 15)
       - 12
     
-    learning_rate:
+    learning_rate: # Taxa de aprendizado (Float ex: 0.01 a 0.2)
       - 0.05
     
-    num_leaves: # Número máximo de folhas por árvore (Controle fino de complexidade no LGBM)
+    num_leaves: # Número máximo de folhas por árvore no LGBM (Int ex: 15 a 127)
       - 29
       - 63
     
-    subsample:
+    subsample: # Amostragem de linhas por árvore (Float ex: 0.6 a 1.0)
       - 0.8
       - 1.0
     
-    colsample_bytree:
+    colsample_bytree: # Amostragem de colunas por árvore (Float ex: 0.6 a 1.0)
       - 1.0
     
-    reg_alpha:
+    reg_alpha: # Penalização L1 (Float ex: 0.0 a 5.0)
       - 0.1
     
-    reg_lambda:
+    reg_lambda: # Penalização L2 (Float ex: 0.0 a 5.0)
       - 1.0
     
-    drop_feat:
+    drop_feat: # Redução de features: [none, top_k, pca]
       - type: top_k
         k: 40
       - type: pca
@@ -225,39 +357,39 @@ models:
   # RANDOM FOREST (Bagging de Árvores de Decisão Independentes)
   # ----------------------------------------------------------------------------
   random_forest:
-    pref_queue: cpu # Executa em paralelo via CPU (n_jobs=1 por processo worker)
+    pref_queue: cpu  # Fila de hardware preferencial. Opções válidas: [gpu_exclusive, gpu, cpu_exclusive, cpu]
     
-    n_estimators: # Número de árvores independentes na floresta
+    n_estimators: # Número de árvores paralelas na floresta (Int ex: 100 a 500)
       - 100
       - 200
       - 400
     
-    max_depth: # Profundidade máxima das árvores
+    max_depth: # Profundidade máxima das árvores (Int ex: 5 a 20)
       - 8
       - 12
       - 15
     
-    max_features: # Quantidade/Porcentagem de colunas a sortear por corte
-      - sqrt # Raiz quadrada do total de colunas (Padrão clássico)
+    max_features: # Amostragem de colunas por corte. Opções válidas: [sqrt, log2, 0.3, 0.5, 0.7, 1.0]
+      - sqrt # Raiz quadrada do total de colunas
       - 0.3  # 30% das colunas (Força desancoragem de indicadores dominantes)
     
-    min_samples_leaf: # Mínimo de amostras exigidas em cada folha (Evita decorar ruído)
+    min_samples_leaf: # Mínimo de amostras por folha para evitar ruído (Int ex: 1, 10, 30)
       - 15
       - 30
     
-    min_samples_split: # Mínimo de amostras exigidas para permitir uma nova divisão
+    min_samples_split: # Mínimo de amostras para permitir nova divisão de nó (Int ex: 2, 10, 20)
       - 10
       - 20
     
-    ccp_alpha: # Podamento de Custo-Complexidade (Cost-Complexity Pruning para árvores)
+    ccp_alpha: # Cost-Complexity Pruning para podamento de ramos fracos (Float ex: 0.0, 0.01, 0.05)
       - 0.0
       - 0.01
     
-    class_weight: # Ponderação de classes para equilibrar alvos raras
+    class_weight: # Equilíbrio de pesos de classe. Opções válidas: [balanced, balanced_subsample, null]
       - balanced
       - balanced_subsample # Recalcula pesos dinamicamente para cada sub-árvore
     
-    drop_feat:
+    drop_feat: # Redução de features: [none, top_k, pca]
       - type: top_k
         k: 40
       - type: pca
@@ -269,46 +401,46 @@ models:
   # MLP (Multi-Layer Perceptron / Rede Neural Profunda PyTorch)
   # ----------------------------------------------------------------------------
   mlp:
-    pref_queue: gpu_exclusive
+    pref_queue: gpu_exclusive  # Fila de hardware preferencial. Opções válidas: [gpu_exclusive, gpu, cpu_exclusive, cpu]
     
-    hidden_layer_sizes: # Arquitetura das camadas ocultas (Neurônios por camada)
+    hidden_layer_sizes: # Lista com contagem de neurônios por camada oculta (Array de Ints)
       - [128, 64]       # Rede rasa de 2 camadas
       - [256, 128]      # Rede média de 2 camadas
       - [256, 128, 64]  # Rede profunda de 3 camadas
-      - [512, 256, 128] # Rede massiva para capturar relações complexas
+      - [512, 256, 128] # Rede massiva para relações complexas
     
-    learning_rate_init: # Taxa de aprendizado inicial do otimizador Adam
+    learning_rate_init: # Taxa de aprendizado inicial do otimizador Adam (Float ex: 0.0001 a 0.01)
       - 0.001
       - 0.01
     
-    max_iter: # Teto máximo de épocas de treinamento
+    max_iter: # Teto máximo de épocas de treinamento (Int ex: 200 a 1000)
       - 500
       - 1000
     
-    patience: # Tolerância do Early Stopping (Número de épocas sem melhora antes de parar)
+    patience: # Tolerância de épocas sem melhora antes da parada antecipada (Int ex: 10, 15, 30)
       - 15
       - 30
     
-    tol: # Limiar de variação mínima na perda (loss) para resetar o contador de paciência
+    tol: # Variação mínima na perda (loss) para considerar evolução (Float ex: 0.0001, 0.001)
       - 0.0001
       - 0.001
     
-    activation: # Função de ativação entre os neurônios
+    activation: # Função de ativação entre camadas. Opções válidas: [relu, tanh, logistic]
       - relu
     
-    dropout_p: # Taxa de desativação aleatória de neurônios durante o treino (Evita decorar)
+    dropout_p: # Taxa de desativação aleatória de neurônios durante o treino (Float ex: 0.0 a 0.5)
       - 0.3
       - 0.4
     
-    weight_decay: # Penalidade L2 nos pesos dos neurônios PyTorch
+    weight_decay: # Penalidade L2 nos pesos dos neurônios (Float ex: 0.0 a 0.01)
       - 0.0
       - 0.0001
     
-    class_weight:
+    class_weight: # Pesos de perda por classe. Opções válidas: [balanced, null]
       - balanced
-      - null # Sem ponderação de pesos na perda CrossEntropy
+      - null
     
-    drop_feat:
+    drop_feat: # Redução de features: [none, top_k, pca]
       - type: top_k
         k: 40
       - type: pca
@@ -320,28 +452,28 @@ models:
   # DECISION TREE (Árvore de Decisão Simples / Modelo Interpretável Base)
   # ----------------------------------------------------------------------------
   decision_tree:
-    pref_queue: cpu
+    pref_queue: cpu  # Fila de hardware preferencial. Opções válidas: [gpu_exclusive, gpu, cpu_exclusive, cpu]
     
-    max_depth:
+    max_depth: # Profundidade máxima da árvore (Int ex: 3 a 15)
       - 9
       - 12
     
-    min_samples_split:
+    min_samples_split: # Mínimo de amostras para divisão (Int ex: 2 a 50)
       - 10
       - 20
     
-    min_samples_leaf:
+    min_samples_leaf: # Mínimo de amostras na folha (Int ex: 1 a 30)
       - 5
       - 15
     
-    ccp_alpha:
+    ccp_alpha: # Podamento de Custo-Complexidade (Float ex: 0.0 a 0.05)
       - 0.0
       - 0.01
     
-    class_weight:
+    class_weight: # Equilíbrio de classe. Opções válidas: [balanced, null]
       - balanced
     
-    drop_feat:
+    drop_feat: # Redução de features: [none, top_k, pca]
       - type: top_k
         k: 40
       - type: pca
@@ -350,23 +482,23 @@ models:
       - none
 
   # ----------------------------------------------------------------------------
-  # KNN (K-Nearest Neighbors / Vizinhos Mais Próximos Acelerado por PyTorch GPU)
+  # KNN (K-Nearest Neighbors / Vizinhos Mais Próximos PyTorch GPU)
   # ----------------------------------------------------------------------------
   knn:
-    pref_queue: gpu # Distância vetorial calculada na placa de vídeo
+    pref_queue: gpu  # Fila de hardware preferencial. Opções válidas: [gpu_exclusive, gpu, cpu_exclusive, cpu]
     
-    n_neighbors: # Quantidade de vizinhos históricos comparados
+    n_neighbors: # Quantidade de vizinhos históricos comparados K (Int ex: 3 a 31)
       - 5
       - 11
     
-    weights: # Ponderação pela distância (uniforme ou inversamente proporcional)
-      - uniform
-      - distance
+    weights: # Ponderação por distância. Opções válidas: [uniform, distance]
+      - uniform   # Todos os K vizinhos têm o mesmo peso de voto
+      - distance  # Vizinhos mais próximos têm peso de voto maior
     
-    metric: # Métrica de cálculo de distância vetorial
-      - manhattan # Distância L1 (Mais robusta em espaço multidimensional que a Euclidiana)
+    metric: # Métrica de distância vetorial. Opções válidas: [manhattan, euclidean, minkowski, chebyshev]
+      - manhattan  # Distância L1 (Soma das diferenças absolutas - Mais estável em finanças)
     
-    drop_feat:
+    drop_feat: # Redução de features: [none, top_k, pca]
       - type: top_k
         k: 40
       - type: pca
@@ -375,36 +507,36 @@ models:
       - none
 
   # ----------------------------------------------------------------------------
-  # LOGISTIC REGRESSION (Classificador Linear Base Acelerado por PyTorch)
+  # LOGISTIC REGRESSION (Classificador Linear Base PyTorch)
   # ----------------------------------------------------------------------------
   logistic_regression:
-    pref_queue: gpu
+    pref_queue: gpu  # Fila de hardware preferencial. Opções válidas: [gpu_exclusive, gpu, cpu_exclusive, cpu]
     
-    learning_rate_init:
+    learning_rate_init: # Taxa de aprendizado inicial do SGD/Adam (Float ex: 0.001 a 0.1)
       - 0.01
     
-    max_iter:
+    max_iter: # Épocas máximas de ajuste dos coeficientes (Int ex: 100 a 1000)
       - 500
     
-    weight_decay: # Equivalente à regularização L2 da regressão logística
+    weight_decay: # Penalização L2 (Ridge) nos coeficientes lineares (Float ex: 0.0 a 0.01)
       - 0.0001
     
-    class_weight:
+    class_weight: # Ponderação de classe. Opções válidas: [balanced, null]
       - balanced
       - null
     
-    drop_feat:
+    drop_feat: # Redução de features: [none, top_k, pca]
       - none
 
   # ----------------------------------------------------------------------------
   # VOTING CLASSIFIER (Ensemble de Votação por Maioria ou Probabilidade)
   # ----------------------------------------------------------------------------
   voting_classifier:
-    pref_queue: gpu_exclusive
+    pref_queue: gpu_exclusive  # Fila de hardware preferencial. Opções válidas: [gpu_exclusive, gpu, cpu_exclusive, cpu]
     
-    voting: # Tipo de votação
-      - soft # Média das probabilidades (Melhor para calibração)
-      - hard # Voto por maioria simples das saídas
+    voting: # Modo de combinação de decisões. Opções válidas: [soft, hard]
+      - soft  # Média ponderada das probabilidades emitidas pelos sub-modelos
+      - hard  # Votação por maioria simples de classe
     
-    drop_feat:
+    drop_feat: # Redução de features: [none]
       - none

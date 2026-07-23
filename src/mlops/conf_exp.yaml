@@ -1,0 +1,443 @@
+# ==============================================================================
+# TICKERVIEW MLOPS - CONFIGURAÇÃO DO EXPERIMENTO ATIVO (BATERIA 006)
+# ==============================================================================
+# Este arquivo é a sua "mesa de som" pronta para uso. Todas as opções inativas
+# continuam salvas no arquivo com '#' na frente. Para testar novas variações,
+# basta selecionar a linha e apertar 'Ctrl + /' no VS Code!
+# ==============================================================================
+
+# ------------------------------------------------------------------------------
+# 1. CONFIGURAÇÃO DE HARDWARE & RECURSOS
+# ------------------------------------------------------------------------------
+_help_hardware_config:
+  cpu_workers: "Qtd máxima de processos concorrentes alocados para a CPU (Recomendado: Núcleos Físicos - 1)"
+  gpu_workers: "Qtd de workers simultâneos por GPU física disposta na máquina"
+  chunk_size: "Tamanho do lote. Recomendado: Total_Modelos / (5 * (cpu_workers + gpu_workers))"
+
+hardware_config:
+  cpu_workers: 15  # Número de processos paralelos em CPU (Int ex: 1 a 64)
+  gpu_workers:
+    - 3  # GPU 0: Quantidade de processos alocados na placa de vídeo (Int ex: 1 a 8)
+  chunk_size: 15  # Tamanho do lote de experimentos processados por rodada de memória (Int ex: 10 a 50)
+
+# Identificador da bateria no banco de dados SQLite.
+bateria_id: bateria06  # String identificadora da bateria no banco
+
+# Datasets de entrada disponíveis no diretório data/dataset/
+datasets:
+  - dataset002  # Opções válidas: [dataset001, dataset002, dataset003]
+  # - dataset001
+  # - dataset003
+
+# ------------------------------------------------------------------------------
+# 2. ESTRATÉGIAS DE TARGET (ROTULAGEM / ALVOS DE MERCADO ATIVOS NA BATERIA 006)
+# ------------------------------------------------------------------------------
+# Os targets definem a "pergunta" que o modelo tenta responder. Cada alvo abaixo
+# rotula o histórico em valores numéricos (geralmente 0 ou 1, ou multiclasse).
+# ------------------------------------------------------------------------------
+target_strategies:
+
+  # --- ALVOS INATIVOS NESTA BATERIA (MANTIDOS COMO REFERÊNCIA) ---
+
+  # - name: outperformance
+  #   horizon_days: 10
+  #   threshold: 0.02
+
+  # - name: volatility_regime
+  #   horizon_days: 5
+
+  # - name: directional_regime
+  #   horizon_days: 5
+  #   threshold: 0.05
+
+  # - name: directional_regime
+  #   horizon_days: 60
+  #   threshold: 0.20
+
+  # - name: fundamental_turnaround
+  #   horizon_days: 120
+
+  # - name: drawdown_risk
+  #   horizon_days: 4
+  #   threshold: 0.03
+
+  # --- ALVOS ATIVOS DA BATERIA 006 ---
+
+  # 1. Squeeze Breakout (Curto Prazo - 10 dias | 0.02)
+  - name: squeeze_breakout  # Opções válidas: [outperformance, volatility_regime, directional_regime, fundamental_turnaround, drawdown_risk, meta_labeling, triple_barrier, vol_adjusted_return, cross_sectional_quantiles, trend_scanning, squeeze_breakout]
+    horizon_days: 10      # Janela de verificação pós-rompimento em dias úteis (Int ex: 5, 10, 15)
+    threshold: 0.02       # Magnitude mínima da explosão de preço pós-squeeze (Float ex: 0.02 = 2%, 0.04 = 4%)
+
+  # 2. Squeeze Breakout (Médio Prazo - 15 dias | 0.04)
+  - name: squeeze_breakout
+    horizon_days: 15
+    threshold: 0.04
+
+  # 3. Meta-Labeling sobre RSI (Filtro de Sobrevenda Extrema - RSI < 25)
+  - name: meta_labeling
+    horizon_days: 10          # Horizonte de tempo para avaliar o sucesso do trade (Int ex: 5, 10, 15)
+    primary_signal_col: RSI_14d  # Coluna do indicador primário. Opções válidas: [RSI_14d, MACD_Hist, Bollinger_Width_21d, Momentum_21d, Volatilidade_21d, Volume_Anomaly_21d, ROE_Calculado_zscore_setorial, P_L_Calculado, P_VP_Calculado]
+    primary_signal_cond: "<"  # Operador lógico de comparação. Opções válidas: ["<", ">", "<=", ">=", "==", "!="]
+    primary_signal_val: 25    # Valor numérico de corte do sinal (Float/Int ex: 25 para RSI, 0 para MACD)
+    profit_threshold: 0.02    # Retorno líquido mínimo necessário para aprovar o trade (Float ex: 0.02 = 2%)
+
+  # 4. Meta-Labeling sobre RSI (Filtro de Sobrevenda Estendida - RSI < 35)
+  - name: meta_labeling
+    horizon_days: 15
+    primary_signal_col: RSI_14d
+    primary_signal_cond: "<"
+    primary_signal_val: 35
+    profit_threshold: 0.03
+
+  # - name: meta_labeling (MACD inativo)
+  #   horizon_days: 10
+  #   primary_signal_col: MACD_Hist
+  #   primary_signal_cond: ">"
+  #   primary_signal_val: 0
+  #   profit_threshold: 0.02
+
+  # 5. Triple Barrier Method (20d | Profit/Loss Ratio: 2.0x / 1.0x Vol)
+  - name: triple_barrier
+    horizon_days: 20  # Dias limites até a expiração da barreira temporal (Int ex: 10, 15, 20)
+    pt_sl_ratio:      # Multiplicadores dinâmicos [Take_Profit, Stop_Loss] da volatilidade 21d
+      - 2.0  # Multiplicador do Take Profit (Float ex: 1.5, 2.0)
+      - 1.0  # Multiplicador do Stop Loss (Float ex: 1.0, 1.5)
+
+  # 6. Volatility-Adjusted Return (10d | Sharpe >= 0.8)
+  - name: vol_adjusted_return
+    horizon_days: 10     # Período de cálculo do Sharpe futuro (Int ex: 5, 10, 21)
+    sharpe_threshold: 0.8  # Razão de Sharpe mínima futura para aprovar o movimento (Float ex: 0.5, 0.8, 1.0)
+
+  # 7. Trend Scanning (10d | Varredura de Regressão de Tendência)
+  - name: trend_scanning
+    horizon_days: 10  # Janela móvel de ajuste da regressão linear (Int ex: 10, 21)
+
+  # 8. Cross-Sectional Quantiles (5d | Ranking por Decis 10%)
+  - name: cross_sectional_quantiles
+    horizon_days: 5  # Janela de comparação do retorno relativo (Int ex: 1, 5, 10)
+    quantiles: 10    # Número de divisões do ranking cross-sectional (Int ex: 5 para Quintis/20%, 10 para Decis/10%)
+
+# ------------------------------------------------------------------------------
+# 3. MÉTODOS DE DIVISÃO TEMPORAL (SPLIT / ANTI-DATA LEAKAGE)
+# ------------------------------------------------------------------------------
+split_configs:
+  # Time Series Purged Cross-Validation (Ativo)
+  - method: tsp     # Método de partição temporal. Opções válidas: [tsp, temporal_holdout]
+    n_splits: 3     # Quantidade de partições temporais com purging (Int ex: 3, 5, 10)
+
+  # Temporal Holdout Clássico (Inativo)
+  # - method: temporal_holdout
+  #   train_ratio: 0.70  # Proporção do histórico destinada a Treino (Float ex: 0.60 a 0.80)
+  #   val_ratio: 0.15    # Proporção do histórico destinada a Validação (Float ex: 0.10 a 0.20)
+
+# ------------------------------------------------------------------------------
+# 4. PIPELINE DE PRÉ-PROCESSAMENTO & LIMPEZA DE DADOS
+# ------------------------------------------------------------------------------
+preprocessing:
+  # Tratamento de infinitos (+/- Inf)
+  inf_handling:
+    - replace_nan  # Substitui infinitos por NaNs para tratamento posterior. Opções válidas: [replace_nan]
+
+  # Imputação de dados faltantes (NaNs)
+  imputation:
+    - ticker_median  # Imputa a mediana histórica do próprio ativo. Opções válidas: [ticker_median, fill_zero, mean, median]
+    # - fill_zero    # Substitui NaNs por 0 (Útil para volume/balanços zerados)
+
+  # Tratamento de Outliers (Valores Extremos)
+  outlier_handling:
+    - clip_95_5  # Trunca valores nos percentis 5% e 95%. Opções válidas: [clip_95_5, none, zscore_clip]
+    # - none     # Mantém os outliers intactos sem truncamento
+
+  # Normalização e Escalonamento de Escala
+  scaling:
+    - robust    # RobustScaler: Usa mediana/IQR, ideal para finanças com caudas longas. Opções válidas: [robust, standard, none, minmax]
+    - standard  # StandardScaler: Transforma para média 0 e desvio padrão 1
+    # - none      # Sem normalização (Recomendado se for usar puramente modelos baseados em Árvores)
+
+# ------------------------------------------------------------------------------
+# 5. MODELOS & HIPERPARÂMETROS DA BATERIA 006
+# ------------------------------------------------------------------------------
+models:
+
+  # ----------------------------------------------------------------------------
+  # XGBOOST (Tunado para Bateria 006)
+  # ----------------------------------------------------------------------------
+  xgboost:
+    pref_queue: gpu_exclusive  # Fila de hardware preferencial. Opções válidas: [gpu_exclusive, gpu, cpu_exclusive, cpu]
+    
+    n_estimators: # Quantidade máxima de árvores sequenciais acumuladas (Int ex: 100 a 1000)
+      - 350
+      # - 300
+      # - 500
+    
+    max_depth: # Profundidade máxima de cada árvore (Int ex: 3 a 15)
+      - 6
+      # - 7
+      # - 9
+      # - 12
+    
+    learning_rate: # Taxa de aprendizado/Encolhimento de passo eta (Float ex: 0.01 a 0.3)
+      - 0.05
+    
+    subsample: # Porcentagem de linhas/amostras sorteadas por árvore (Float ex: 0.5 a 1.0)
+      - 0.9
+      # - 0.7
+    
+    colsample_bytree: # Porcentagem de colunas/features sorteadas por árvore (Float ex: 0.5 a 1.0)
+      - 0.5
+      # - 0.7
+    
+    reg_alpha: # Regularização L1 (Lasso) - Zera pesos irrelevantes nas folhas (Float ex: 0.0 a 10.0)
+      - 0.05
+      # - 0.0
+      # - 0.1
+    
+    reg_lambda: # Regularização L2 (Ridge) - Suaviza pesos nas folhas contra overfitting (Float ex: 0.0 a 10.0)
+      - 5.0
+      # - 1.0
+      # - 7.0
+    
+    drop_feat: # Seleção ou redução prévia de features. Opções válidas: [none, top_k, pca]
+      - none
+      # - type: top_k
+      #   k: 40
+      # - type: pca
+      #   k: 40
+      #   n_components: 3
+
+  # ----------------------------------------------------------------------------
+  # LIGHTGBM (Tunado para Bateria 006)
+  # ----------------------------------------------------------------------------
+  lightgbm:
+    pref_queue: gpu_exclusive  # Fila de hardware preferencial. Opções válidas: [gpu_exclusive, gpu, cpu_exclusive, cpu]
+    
+    n_estimators: # Quantidade de árvores (Int ex: 100 a 1000)
+      - 350
+      # - 400
+    
+    max_depth: # Profundidade máxima (Int ex: -1 para ilimitado, 5 a 15)
+      - 9
+      # - 12
+    
+    learning_rate: # Taxa de aprendizado (Float ex: 0.01 a 0.2)
+      - 0.05
+    
+    num_leaves: # Número máximo de folhas por árvore no LGBM (Int ex: 15 a 127)
+      - 35
+      # - 29
+      # - 63
+    
+    subsample: # Amostragem de linhas por árvore (Float ex: 0.6 a 1.0)
+      - 1.0
+      # - 0.8
+    
+    colsample_bytree: # Amostragem de colunas por árvore (Float ex: 0.6 a 1.0)
+      - 0.5
+      # - 1.0
+    
+    reg_alpha: # Penalização L1 (Float ex: 0.0 a 5.0)
+      - 0.05
+      # - 0.1
+    
+    reg_lambda: # Penalização L2 (Float ex: 0.0 a 5.0)
+      - 1.0
+    
+    drop_feat: # Redução de features. Opções válidas: [none, top_k, pca]
+      - type: pca
+        k: 75             # Colunas selecionadas antes do PCA (Int ex: 30, 40, 75)
+        n_components: 5   # Componentes principais a gerar (Int ex: 2, 3, 5)
+      # - type: top_k
+      #   k: 40
+      # - none
+
+  # ----------------------------------------------------------------------------
+  # RANDOM FOREST (Tunado para Bateria 006)
+  # ----------------------------------------------------------------------------
+  random_forest:
+    pref_queue: cpu  # Fila de hardware preferencial. Opções válidas: [gpu_exclusive, gpu, cpu_exclusive, cpu]
+    
+    n_estimators: # Número de árvores paralelas na floresta (Int ex: 100 a 500)
+      - 200
+      - 300
+      # - 100
+      # - 400
+    
+    max_depth: # Profundidade máxima das árvores (Int ex: 5 a 20)
+      - 12
+      - 15
+      # - 8
+    
+    max_features: # Amostragem de colunas por corte. Opções válidas: [sqrt, log2, 0.3, 0.5, 0.7, 1.0]
+      - 0.5
+      # - sqrt
+      # - 0.3
+    
+    min_samples_leaf: # Mínimo de amostras por folha para evitar ruído (Int ex: 1, 10, 30)
+      - 15
+      # - 30
+    
+    min_samples_split: # Mínimo de amostras para permitir nova divisão de nó (Int ex: 2, 10, 20)
+      - 15
+      # - 10
+      # - 20
+    
+    ccp_alpha: # Cost-Complexity Pruning para podamento de ramos fracos (Float ex: 0.0, 0.01, 0.05)
+      - 0.01
+      # - 0.0
+    
+    class_weight: # Equilíbrio de pesos de classe. Opções válidas: [balanced, balanced_subsample, null]
+      - balanced_subsample
+      # - balanced
+    
+    drop_feat: # Redução de features. Opções válidas: [none, top_k, pca]
+      - type: pca
+        k: 30
+        n_components: 2
+      - none
+      # - type: top_k
+      #   k: 40
+
+  # ----------------------------------------------------------------------------
+  # MLP (Rede Neural Profunda PyTorch - Tunada para Bateria 006)
+  # ----------------------------------------------------------------------------
+  mlp:
+    pref_queue: gpu_exclusive  # Fila de hardware preferencial. Opções válidas: [gpu_exclusive, gpu, cpu_exclusive, cpu]
+    
+    hidden_layer_sizes: # Lista com contagem de neurônios por camada oculta (Array de Ints)
+      - [256, 128, 64]   # Rede profunda de 3 camadas
+      - [512, 256, 128]  # Rede massiva de 3 camadas
+      # - [128, 64]
+      # - [256, 128]
+    
+    learning_rate_init: # Taxa de aprendizado inicial do otimizador Adam (Float ex: 0.001 a 0.01)
+      - 0.01
+      # - 0.001
+    
+    max_iter: # Teto máximo de épocas de treinamento (Int ex: 200 a 1000)
+      - 500
+      # - 1000
+    
+    patience: # Tolerância de épocas sem melhora antes da parada antecipada (Int ex: 10, 15, 30)
+      - 15
+      # - 30
+    
+    tol: # Variação mínima na perda (loss) para considerar evolução (Float ex: 0.0001, 0.001)
+      - 0.0001
+      # - 0.001
+    
+    activation: # Função de ativação entre camadas. Opções válidas: [relu, tanh, logistic]
+      - relu
+    
+    dropout_p: # Taxa de desativação aleatória de neurônios durante o treino (Float ex: 0.0 a 0.5)
+      - 0.3
+      # - 0.4
+    
+    weight_decay: # Penalidade L2 nos pesos dos neurônios (Float ex: 0.0 a 0.01)
+      # - 0.0
+      # - 0.0001
+    
+    class_weight: # Pesos de perda por classe. Opções válidas: [balanced, null]
+      - balanced
+      # - null
+    
+    drop_feat: # Redução de features. Opções válidas: [none, top_k, pca]
+      - type: pca
+        k: 75
+        n_components: 5
+      # - type: top_k
+      #   k: 40
+      # - none
+
+  # ----------------------------------------------------------------------------
+  # DECISION TREE (Tunada para Bateria 006)
+  # ----------------------------------------------------------------------------
+  decision_tree:
+    pref_queue: cpu  # Fila de hardware preferencial. Opções válidas: [gpu_exclusive, gpu, cpu_exclusive, cpu]
+    
+    max_depth: # Profundidade máxima da árvore (Int ex: 3 a 15)
+      - 9
+      - 12
+    
+    min_samples_split: # Mínimo de amostras para divisão (Int ex: 2 a 50)
+      - 10
+      - 20
+    
+    min_samples_leaf: # Mínimo de amostras na folha (Int ex: 1 a 30)
+      # - 5
+      # - 15
+    
+    ccp_alpha: # Podamento de Custo-Complexidade (Float ex: 0.0 a 0.05)
+      # - 0.0
+      # - 0.01
+    
+    class_weight: # Equilíbrio de classe. Opções válidas: [balanced, null]
+      - balanced
+    
+    drop_feat: # Redução de features. Opções válidas: [none, top_k, pca]
+      - none
+      # - type: top_k
+      #   k: 40
+      # - type: pca
+      #   k: 40
+      #   n_components: 3
+
+  # ----------------------------------------------------------------------------
+  # KNN (Tunado para Bateria 006)
+  # ----------------------------------------------------------------------------
+  knn:
+    pref_queue: gpu  # Fila de hardware preferencial. Opções válidas: [gpu_exclusive, gpu, cpu_exclusive, cpu]
+    
+    n_neighbors: # Quantidade de vizinhos históricos comparados K (Int ex: 3 a 31)
+      - 9
+    #  - 11
+    
+    weights: # Ponderação por distância. Opções válidas: [uniform, distance]
+      - uniform
+    #  - distance
+    
+    metric: # Métrica de distância vetorial. Opções válidas: [manhattan, euclidean, minkowski, chebyshev]
+      - minkowski
+      - chebyshev
+    
+    drop_feat: # Redução de features. Opções válidas: [none, top_k, pca]
+      - none
+      # - type: top_k
+      #   k: 40
+      # - type: pca
+      #   k: 40
+      #   n_components: 3
+
+  # ----------------------------------------------------------------------------
+  # LOGISTIC REGRESSION (Classificador Linear Base PyTorch)
+  # ----------------------------------------------------------------------------
+  # logistic_regression:
+  #   pref_queue: gpu  # Fila de hardware preferencial. Opções válidas: [gpu_exclusive, gpu, cpu_exclusive, cpu]
+    
+  #   learning_rate_init: # Taxa de aprendizado inicial do SGD/Adam (Float ex: 0.001 a 0.1)
+  #     - 0.01
+    
+  #   max_iter: # Épocas máximas de ajuste dos coeficientes (Int ex: 100 a 1000)
+  #     - 500
+    
+  #   weight_decay: # Penalização L2 (Ridge) nos coeficientes lineares (Float ex: 0.0 a 0.01)
+  #     - 0.0001
+    
+  #   class_weight: # Ponderação de classe. Opções válidas: [balanced, null]
+  #     - balanced
+  #     - null
+    
+  #   drop_feat: # Redução de features: [none, top_k, pca]
+  #     - none
+
+  # ----------------------------------------------------------------------------
+  # VOTING CLASSIFIER (Ensemble de Votação por Maioria ou Probabilidade)
+  # ----------------------------------------------------------------------------
+  # voting_classifier:
+  #   pref_queue: gpu_exclusive  # Fila de hardware preferencial. Opções válidas: [gpu_exclusive, gpu, cpu_exclusive, cpu]
+    
+  #   voting: # Modo de combinação de decisões. Opções válidas: [soft, hard]
+  #     - soft  # Média ponderada das probabilidades emitidas pelos sub-modelos
+  #     - hard  # Votação por maioria simples de classe
+    
+  #   drop_feat: # Redução de features: [none]
+  #     - none

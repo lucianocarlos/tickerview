@@ -36,7 +36,6 @@ def load_all_metrics():
             e.target_strategy,
             e.target_strategy as target_strategy_raw,
             e.experiment_config,
-            json_extract(e.experiment_config, '$.split_config.method') as split_method,
             mc.val_accuracy,
             mc.val_f1_macro as val_f1_score_macro,
             mc.test_accuracy,
@@ -67,18 +66,6 @@ def load_all_metrics():
 
     df_global = pd.concat(all_dfs, ignore_index=True)
 
-    # Tratando um formato temporal_holdout da base nova para Holdout da interface velha
-    def rename_split(split):
-        if not split:
-            return "Holdout"
-        if "temporal" in split:
-            return "Holdout"
-        if "time_series" in split:
-            return "TSP"
-        return split
-
-    df_global["split_method"] = df_global["split_method"].apply(rename_split)
-
     # Tratando target_strategy e configurações (YAML/JSON strings)
     import json
     try:
@@ -103,6 +90,28 @@ def load_all_metrics():
 
     df_global["parameters_dict"] = df_global["parameters"].apply(safe_config_load)
     df_global["experiment_config_dict"] = df_global["experiment_config"].apply(safe_config_load)
+
+    # Extrai split_method de forma totalmente compatível com YAML e JSON
+    def extract_split_method(cfg_dict):
+        if isinstance(cfg_dict, dict):
+            split_cfg = cfg_dict.get("split_config", {})
+            if isinstance(split_cfg, dict):
+                return split_cfg.get("method", "tsp")
+            elif isinstance(split_cfg, list) and len(split_cfg) > 0:
+                return split_cfg[0].get("method", "tsp")
+        return "tsp"
+
+    def rename_split(split):
+        if not split:
+            return "Holdout"
+        if "temporal" in split:
+            return "Holdout"
+        if "time_series" in split or "tsp" in split:
+            return "TSP"
+        return split
+
+    df_global["split_method_raw"] = df_global["experiment_config_dict"].apply(extract_split_method)
+    df_global["split_method"] = df_global["split_method_raw"].apply(rename_split)
 
     def rename_target(target):
         if not target:

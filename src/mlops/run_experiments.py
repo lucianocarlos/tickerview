@@ -20,12 +20,27 @@ import warnings
 import threading
 from concurrent.futures import ProcessPoolExecutor, wait, FIRST_COMPLETED
 
+try:
+    import yaml
+except ImportError:
+    yaml = None
+
 # Importações locais do MLOps
 import db_manager
 from classification import classifier
 
 # Suprimir o aviso de parada de worker do loky (Comum ao usar PyTorch via Multiprocessing)
 warnings.filterwarnings("ignore", category=UserWarning, module="joblib.externals.loky")
+
+
+def _init_gpu_env(d_id):
+    import os
+    os.environ["CUDA_VISIBLE_DEVICES"] = str(d_id)
+
+
+def _init_cpu_env():
+    import os
+    os.environ["CUDA_VISIBLE_DEVICES"] = ""
 
 
 class TaskDispatcher:
@@ -406,7 +421,7 @@ def executar_bateria_teste(config_path):
             continue
 
         print(
-            f"\n[INFO] ESTÁGIO 2: Treinamento Paralelo ({total_tarefas} tarefas). TaskDispatcher iniciado às {time.time()}"
+            f"\n[INFO] ESTÁGIO 2: Treinamento Paralelo ({total_tarefas} tarefas). TaskDispatcher iniciado às {time.strftime('%H:%M:%S')}"
         )
 
         parallel_start = time.time()
@@ -495,10 +510,6 @@ def executar_bateria_teste(config_path):
                 f"[INFO] Pool {pool_name} finalizado (Fila completamente esgotada para ele)."
             )
 
-        def init_gpu_env(d_id):
-            import os
-            os.environ["CUDA_VISIBLE_DEVICES"] = str(d_id)
-
         def run_gpu(device_id, workers):
             gpu_name = f"gpu-{device_id}"
             try:
@@ -507,7 +518,7 @@ def executar_bateria_teste(config_path):
                     gpu_name = f"gpu-{torch.cuda.get_device_name(device_id).lower()}"
             except Exception:
                 pass
-            run_worker_pool(gpu_name, workers, dispatcher.get_task_for_gpu, initializer=init_gpu_env, initargs=(device_id,))
+            run_worker_pool(gpu_name, workers, dispatcher.get_task_for_gpu, initializer=_init_gpu_env, initargs=(device_id,))
 
         def run_cpu():
             cpu_name = "cpu"
@@ -518,12 +529,7 @@ def executar_bateria_teste(config_path):
             except Exception:
                 pass
             
-            def init_cpu_env():
-                import os
-                # Impede que a CPU enxergue qualquer GPU acidentalmente
-                os.environ["CUDA_VISIBLE_DEVICES"] = ""
-                
-            run_worker_pool(cpu_name, cpu_workers_limit, dispatcher.get_task_for_cpu, initializer=init_cpu_env)
+            run_worker_pool(cpu_name, cpu_workers_limit, dispatcher.get_task_for_cpu, initializer=_init_cpu_env)
 
         threads = []
         
@@ -626,11 +632,18 @@ def executar_bateria_teste(config_path):
         print(f"Total de Modelos:     {num_models}")
         print("\n--- F1 Score Máximo (Por Target) ---")
         for _, r in df_tgt.iterrows():
-            tgt_name = (
-                json.loads(r["target_strategy"]).get("name")
-                if "{" in r["target_strategy"]
-                else r["target_strategy"]
-            )
+            raw_tgt = r["target_strategy"]
+            tgt_name = raw_tgt
+            try:
+                if isinstance(raw_tgt, str):
+                    if yaml is not None:
+                        parsed_tgt = yaml.safe_load(raw_tgt)
+                    else:
+                        parsed_tgt = json.loads(raw_tgt)
+                    if isinstance(parsed_tgt, dict):
+                        tgt_name = parsed_tgt.get("name", raw_tgt)
+            except:
+                pass
             print(f" {tgt_name:<30} | {r['max_f1']:.4f}")
 
         print("\n--- F1 Score Máximo (Por Estimador) ---")
@@ -647,10 +660,13 @@ if __name__ == "__main__":
     if len(sys.argv) > 1:
         caminho_config = sys.argv[1]
     else:
-        # Carregamento autônomo: prefere .yaml se existir, senão usa .json
+        # Carregamento autônomo: prioridade para conf_exp.yaml -> conf_exp_opt.yaml -> conf_exp_opt.json
+        caminho_exp_yaml = os.path.join(os.path.dirname(__file__), "conf_exp.yaml")
         caminho_yaml = os.path.join(os.path.dirname(__file__), "conf_exp_opt.yaml")
         caminho_json = os.path.join(os.path.dirname(__file__), "conf_exp_opt.json")
-        if os.path.exists(caminho_yaml):
+        if os.path.exists(caminho_exp_yaml):
+            caminho_config = caminho_exp_yaml
+        elif os.path.exists(caminho_yaml):
             caminho_config = caminho_yaml
         else:
             caminho_config = caminho_json

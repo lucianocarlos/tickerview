@@ -908,6 +908,12 @@ def preprocessar_dados(
     X_val, y_val = df_val[feature_cols].copy(), df_val["target"]
     X_test, y_test = df_test[feature_cols].copy(), df_test["target"]
 
+    if len(X_train) == 0:
+        raise ValueError(
+            f"Matriz de treino vazia (0 amostras) para a estratégia '{target_strategy}'. "
+            f"O sinal primário do alvo não acionou no período do histórico."
+        )
+
     if scaling_method != "none" and len(feature_cols) > 0:
         if scaling_method == "standard":
             scaler = StandardScaler()
