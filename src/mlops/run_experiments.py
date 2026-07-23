@@ -167,17 +167,28 @@ def worker_treinar_lote(cache_path, modelos_lista, calc_permutation):
     return resultados
 
 
+def carregar_configuracao(config_path):
+    """Carrega arquivo de configuração suportando formatos YAML (.yaml/.yml) e JSON (.json)."""
+    ext = os.path.splitext(config_path)[1].lower()
+    with open(config_path, "r", encoding="utf-8") as f:
+        if ext in [".yaml", ".yml"]:
+            if yaml is None:
+                raise ImportError("PyYAML não instalado. Execute 'pip install pyyaml' para ler arquivos .yaml")
+            return yaml.safe_load(f)
+        else:
+            return json.load(f)
+
+
 def executar_bateria_teste(config_path):
     battery_start_time = time.time()
 
-    with open(config_path, "r", encoding="utf-8") as f:
-        config = json.load(f)
+    config = carregar_configuracao(config_path)
 
     # NOVO: Chave mestra de performance
     global_permutation = config.get("calculate_permutation_importance", False)
 
-    # O nome da bateria vem explicitamente de dentro do JSON (ou usa o nome do arquivo se não existir)
-    file_name_fallback = os.path.basename(config_path).replace(".json", "")
+    # O nome da bateria vem explicitamente de dentro do arquivo (ou usa o nome do arquivo sem extensão)
+    file_name_fallback = os.path.splitext(os.path.basename(config_path))[0]
     battery_name = config.get(
         "baterias_name", config.get("bateria_id", file_name_fallback)
     )
@@ -634,10 +645,15 @@ def executar_bateria_teste(config_path):
 
 if __name__ == "__main__":
     if len(sys.argv) > 1:
-        caminho_json = sys.argv[1]
+        caminho_config = sys.argv[1]
     else:
-        # Carregamento autônomo sem necessidade de passagem de parâmetro
+        # Carregamento autônomo: prefere .yaml se existir, senão usa .json
+        caminho_yaml = os.path.join(os.path.dirname(__file__), "conf_exp_opt.yaml")
         caminho_json = os.path.join(os.path.dirname(__file__), "conf_exp_opt.json")
-        print(f"[SETUP] Nenhum parâmetro fornecido. Carregando padrão: {caminho_json}")
+        if os.path.exists(caminho_yaml):
+            caminho_config = caminho_yaml
+        else:
+            caminho_config = caminho_json
+        print(f"[SETUP] Nenhum parâmetro fornecido. Carregando padrão: {caminho_config}")
 
-    executar_bateria_teste(caminho_json)
+    executar_bateria_teste(caminho_config)

@@ -79,29 +79,37 @@ def load_all_metrics():
 
     df_global["split_method"] = df_global["split_method"].apply(rename_split)
 
-    # Tratando target_strategy (JSON string vs Normal string)
+    # Tratando target_strategy e configurações (YAML/JSON strings)
     import json
+    try:
+        import yaml
+    except ImportError:
+        yaml = None
     
-    def safe_json_load(val):
-        if pd.isna(val):
+    def safe_config_load(val):
+        if pd.isna(val) or not val:
             return {}
-        if isinstance(val, str) and val.startswith("{"):
+        if isinstance(val, dict):
+            return val
+        if isinstance(val, str):
             try:
+                if yaml is not None:
+                    res = yaml.safe_load(val)
+                    return res if isinstance(res, dict) else {}
                 return json.loads(val)
             except:
                 pass
         return {}
 
-    df_global["parameters_dict"] = df_global["parameters"].apply(safe_json_load)
-    df_global["experiment_config_dict"] = df_global["experiment_config"].apply(safe_json_load)
+    df_global["parameters_dict"] = df_global["parameters"].apply(safe_config_load)
+    df_global["experiment_config_dict"] = df_global["experiment_config"].apply(safe_config_load)
 
     def rename_target(target):
         if not target:
             return "unknown"
         try:
-            # Se for JSON string (novo formato)
-            if target.startswith("{"):
-                data = json.loads(target)
+            data = safe_config_load(target)
+            if isinstance(data, dict) and "name" in data:
                 name = data.get("name", target)
                 horizon = data.get("horizon_days", "")
                 thresh = data.get("threshold", "")

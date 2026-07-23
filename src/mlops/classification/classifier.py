@@ -84,6 +84,8 @@ class SklearnPyTorchMLPWrapper:
         weight_decay=0.0,
         dropout_p=0.3,
         class_weight=None,
+        patience=15,
+        tol=1e-4,
         random_state=42,
         device=None,
         **kwargs,
@@ -95,10 +97,13 @@ class SklearnPyTorchMLPWrapper:
         self.weight_decay = weight_decay
         self.dropout_p = dropout_p
         self.class_weight = class_weight
+        self.patience = patience
+        self.tol = tol
         self.random_state = random_state
         self.device = device if device is not None else DEVICE
         self.model = None
         self.classes_ = None
+        self.n_iter_ = 0
 
     def fit(self, X, y):
         torch.manual_seed(self.random_state)
@@ -134,9 +139,10 @@ class SklearnPyTorchMLPWrapper:
         self.model.train()
         best_loss = float('inf')
         patience_counter = 0
-        patience = 15
+        self.n_iter_ = 0
 
         for epoch in range(self.max_iter):
+            self.n_iter_ = epoch + 1
             optimizer.zero_grad()
             outputs = self.model(X_t)
             loss = criterion(outputs, y_t)
@@ -144,12 +150,12 @@ class SklearnPyTorchMLPWrapper:
             optimizer.step()
 
             current_loss = loss.item()
-            if current_loss < best_loss - 1e-4:
+            if current_loss < best_loss - self.tol:
                 best_loss = current_loss
                 patience_counter = 0
             else:
                 patience_counter += 1
-                if patience_counter >= patience:
+                if patience_counter >= self.patience:
                     break
 
         return self
@@ -1167,5 +1173,8 @@ def treinar_e_avaliar_modelo_pre_processado(
                         feature_importances[feature_cols[idx]] = float(importances[idx])
         else:
             importance_type = "skipped"
+
+    if hasattr(model, "n_iter_"):
+        feature_importances["_n_iter_executadas"] = float(model.n_iter_)
 
     return metrics, confusion_mat, feature_importances, importance_type

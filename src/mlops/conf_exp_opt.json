@@ -41,6 +41,28 @@
             "primary_signal_cond": "<",
             "primary_signal_val": 35,
             "profit_threshold": 0.03
+        },
+        {
+            "name": "triple_barrier",
+            "horizon_days": 20,
+            "pt_sl_ratio": [
+                2.0,
+                1.0
+            ]
+        },
+        {
+            "name": "vol_adjusted_return",
+            "horizon_days": 10,
+            "sharpe_threshold": 0.8
+        },
+        {
+            "name": "trend_scanning",
+            "horizon_days": 10
+        },
+        {
+            "name": "cross_sectional_quantiles",
+            "horizon_days": 5,
+            "quantiles": 10
         }
     ],
     "split_configs": [
@@ -68,27 +90,25 @@
         "xgboost": {
             "pref_queue": "gpu_exclusive",
             "n_estimators": [
-                300,
-                500
+                350
             ],
             "max_depth": [
-                5,
-                7
+                6
             ],
             "learning_rate": [
                 0.05
             ],
             "subsample": [
-                0.7
+                0.9
             ],
             "colsample_bytree": [
-                0.7
+                0.5
             ],
             "reg_alpha": [
-                0.0
+                0.05
             ],
             "reg_lambda": [
-                7.0
+                5.0
             ],
             "drop_feat": [
                 "none"
@@ -97,67 +117,74 @@
         "lightgbm": {
             "pref_queue": "gpu_exclusive",
             "n_estimators": [
-                400
+                350
             ],
             "max_depth": [
-                12
+                9
             ],
             "learning_rate": [
                 0.05
             ],
             "num_leaves": [
-                29
+                35
             ],
             "subsample": [
-                0.8,
                 1.0
             ],
             "colsample_bytree": [
-                1.0
+                0.5
             ],
             "reg_alpha": [
-                0.1
+                0.05
             ],
             "reg_lambda": [
                 1.0
             ],
             "drop_feat": [
                 {
-                    "type": "top_k",
-                    "k": 40
-                },
-                "none"
+                    "type": "pca",
+                    "k": 75,
+                    "n_components": 5
+                }
             ]
         },
         "random_forest": {
             "pref_queue": "cpu",
             "n_estimators": [
-                100,
                 200,
-                400
+                300
             ],
             "max_depth": [
-                5,
-                8
+                12,
+                15
             ],
             "class_weight": [
-                "balanced"
+                "balanced_subsample"
             ],
             "drop_feat": [
                 {
-                    "type": "top_k",
-                    "k": 40
+                    "type": "pca",
+                    "k": 30,
+                    "n_components": 2
                 },
                 "none"
+            ],
+            "max_features": [
+                0.5
+            ],
+            "min_samples_leaf": [
+                15
+            ],
+            "min_samples_split": [
+                15
+            ],
+            "ccp_alpha": [
+                0.01
             ]
         },
         "mlp": {
             "pref_queue": "gpu_exclusive",
             "hidden_layer_sizes": [
-                [
-                    256,
-                    128
-                ],
                 [
                     256,
                     128,
@@ -170,25 +197,32 @@
                 ]
             ],
             "learning_rate_init": [
-                0.001,
                 0.01
             ],
             "max_iter": [
-                1000
+                500
+            ],
+            "patience": [
+                15
+            ],
+            "tol": [
+                0.0001
             ],
             "activation": [
                 "relu"
             ],
             "dropout_p": [
-                0.3,
-                0.4
+                0.3
             ],
             "class_weight": [
-                "balanced",
-                null
+                "balanced"
             ],
             "drop_feat": [
-                "none"
+                {
+                    "type": "pca",
+                    "k": 75,
+                    "n_components": 5
+                }
             ]
         },
         "decision_tree": {

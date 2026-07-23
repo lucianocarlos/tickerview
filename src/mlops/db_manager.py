@@ -1,8 +1,21 @@
 import sqlite3
 import json
 import os
+try:
+    import yaml
+except ImportError:
+    yaml = None
 
 DB_PATH = r"data\baterias\default\bateria.db"
+
+def serialize_to_yaml(data):
+    """Converte um dicionário ou lista Python para uma string YAML limpa (purificada/sem comentários)."""
+    if isinstance(data, (dict, list)):
+        if yaml is not None:
+            return yaml.dump(data, sort_keys=False, allow_unicode=True)
+        else:
+            return json.dumps(data, ensure_ascii=False)
+    return data
 
 def set_db_path(new_path):
     """Permite que o Orquestrador defina o destino do Datalake dinamicamente"""
@@ -52,7 +65,7 @@ def get_or_create_dataset(version_hash, features_count, rows_count, generation_p
     if row:
         dataset_id = row[0]
     else:
-        gen_params_str = json.dumps(generation_parameters, ensure_ascii=False) if isinstance(generation_parameters, dict) else generation_parameters
+        gen_params_str = serialize_to_yaml(generation_parameters)
         cur.execute('''
             INSERT INTO datasets (version_hash, features_count, rows_count, generation_parameters)
             VALUES (?, ?, ?, ?)
@@ -73,7 +86,7 @@ def get_or_create_battery(battery_name, global_config):
     if row:
         bat_id = row[0]
     else:
-        config_str = json.dumps(global_config, ensure_ascii=False) if isinstance(global_config, dict) else global_config
+        config_str = serialize_to_yaml(global_config)
         cur.execute('''
             INSERT INTO batteries (battery_name, global_config)
             VALUES (?, ?)
@@ -110,8 +123,8 @@ def get_or_create_experiment(battery_id, dataset_id, task_type, target_strategy,
     conn = get_connection()
     cur = conn.cursor()
     
-    config_str = json.dumps(experiment_config, ensure_ascii=False) if isinstance(experiment_config, dict) else experiment_config
-    target_strategy_str = json.dumps(target_strategy, ensure_ascii=False) if isinstance(target_strategy, dict) else target_strategy
+    config_str = serialize_to_yaml(experiment_config)
+    target_strategy_str = serialize_to_yaml(target_strategy)
     
     cur.execute('''
         SELECT id FROM experiments 

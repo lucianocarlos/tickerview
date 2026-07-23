@@ -1,0 +1,410 @@
+# ==============================================================================
+# TICKERVIEW MLOPS - CONFIGURAÇÃO MESTRE DEFINITIVA (YAML)
+# ==============================================================================
+# Este arquivo contém a referência completa de TODAS as estratégias, alvos,
+# métodos de divisão, pré-processamento e hiperparâmetros suportados pelo sistema.
+#
+# DICA: No VS Code, você pode usar 'Ctrl + /' em qualquer linha ou bloco para 
+# ativar/desativar opções sem precisar apagar nada da sua "mesa de som"!
+# ==============================================================================
+
+# ------------------------------------------------------------------------------
+# 1. CONFIGURAÇÃO DE HARDWARE & RECURSOS
+# ------------------------------------------------------------------------------
+_help_hardware_config:
+  cpu_workers: "Qtd máxima de processos concorrentes alocados para a CPU (Recomendado: Núcleos Físicos - 1)"
+  gpu_workers: "Qtd de workers simultâneos por GPU física disposta na máquina"
+  chunk_size: "Tamanho do lote. Recomendado: Total_Modelos / (5 * (cpu_workers + gpu_workers))"
+
+hardware_config:
+  cpu_workers: 13
+  gpu_workers:
+    - 3  # GPU 0 (ex: RTX 3090)
+  chunk_size: 15
+
+# Identificador da bateria no banco de dados SQLite. 
+# NOTA: Mantenha este id como referência para evitar rodar todas as combinações de uma vez!
+bateria_id: referencia_total_yaml_nao_rodar
+
+# Datasets de entrada disponíveis em data/dataset/
+datasets:
+  - dataset002
+
+# ------------------------------------------------------------------------------
+# 2. ESTRATÉGIAS DE TARGET (RODULAGEM / ALVOS DE MERCADO)
+# ------------------------------------------------------------------------------
+target_strategies:
+  # --- ALVOS TRADICIONAIS (CLASSIFICAÇÃO DIRETA DE PREÇO) ---
+  - name: outperformance
+    horizon_days: 10
+    threshold: 0.02 # Ação precisa superar a média do mercado em +2% em 10 dias
+
+  - name: volatility_regime
+    horizon_days: 5 # Classifica o regime futuro de volatilidade (Alta vs Baixa Vol)
+
+  - name: directional_regime
+    horizon_days: 5
+    threshold: 0.05 # Classifica tendência de curto prazo (+5% Alta / -5% Baixa / Lateral)
+
+  - name: directional_regime
+    horizon_days: 60
+    threshold: 0.20 # Classifica tendência de longo prazo (+20% Alta / -20% Baixa / Lateral)
+
+  - name: fundamental_turnaround
+    horizon_days: 120 # Virada de chave fundamentalista (Trimestral/Semestral)
+
+  - name: drawdown_risk
+    horizon_days: 4
+    threshold: 0.03 # Alerta de risco de queda abrupta (Drawdown de no mínimo 3% em 4d)
+
+  # --- ALVOS AVANÇADOS (ENGENHARIA QUANTITATIVA & META-LABELING) ---
+  # Meta-Labeling: IA atua como "Juiz" filtrando se uma compra disparada pelo indicador técnico será lucrativa
+  - name: meta_labeling
+    horizon_days: 10
+    primary_signal_col: RSI_14d
+    primary_signal_cond: "<"
+    primary_signal_val: 25 # Compra acionada quando RSI entra em sobre-venda extrema (< 25)
+    profit_threshold: 0.02 # Só considera sucesso se o lucro exceder 2%
+
+  - name: meta_labeling
+    horizon_days: 10
+    primary_signal_col: MACD_Hist
+    primary_signal_cond: ">"
+    primary_signal_val: 0 # Compra acionada em cruzamento de alta do MACD Histograma
+    profit_threshold: 0.02
+
+  # Triple Barrier Method (Prado): Barreira Tripla (Take Profit, Stop Loss e Limite de Tempo)
+  - name: triple_barrier
+    horizon_days: 20 # Limite temporal de 20 dias úteis
+    pt_sl_ratio:
+      - 2.0 # Multiplicador da volatilidade para Take Profit (Ganho = 2x Volatilidade)
+      - 1.0 # Multiplicador da volatilidade para Stop Loss (Perda = 1x Volatilidade)
+
+  # Retorno Ajustado pelo Risco (Sharpe Ratio futuro)
+  - name: vol_adjusted_return
+    horizon_days: 10
+    sharpe_threshold: 0.8 # Classifica positivo se o Retorno/Volatilidade for superior a 0.8
+
+  # Classificação em Quantis Cross-Sectional (Decis)
+  - name: cross_sectional_quantiles
+    horizon_days: 5
+    quantiles: 10 # Isola os 10% melhores ativos da bolsa em relação aos pares no mesmo dia
+
+  # Trend Scanning (Varredura de Regressão Temporal para capturar tendências limpas)
+  - name: trend_scanning
+    horizon_days: 10 # Janela de regressão linear deslizante
+
+  # Squeeze Breakout (Compressão de Volatilidade nas Bandas de Bollinger seguida de rompimento)
+  - name: squeeze_breakout
+    horizon_days: 10
+    threshold: 0.03 # Exige expansão da banda + movimento explosivo de 3%
+
+# ------------------------------------------------------------------------------
+# 3. MÉTODOS DE DIVISÃO TEMPORAL (SPLIT / ANTI-DATA LEAKAGE)
+# ------------------------------------------------------------------------------
+split_configs:
+  # Time Series Purged Cross-Validation (Expurgo de dados entre blocos de treino/teste)
+  - method: tsp
+    n_splits: 5 # Divide o histórico em 5 blocos temporais sequenciais com Purging
+
+  # Temporal Holdout Clássico (Divisão Cronológica Rígida)
+  - method: temporal_holdout
+    train_ratio: 0.70 # 70% Treino
+    val_ratio: 0.15   # 15% Validação (15% restante automático para Teste)
+
+# ------------------------------------------------------------------------------
+# 4. PIPELINE DE PRÉ-PROCESSAMENTO & LIMPEZA DE DADOS
+# ------------------------------------------------------------------------------
+preprocessing:
+  # Tratamento de valores infinitos
+  inf_handling:
+    - replace_nan # Substitui +/- Inf por NaNs para serem imputados em seguida
+
+  # Estratégias de Imputação de Dados Faltantes (NaNs)
+  imputation:
+    - ticker_median # Imputa a mediana histórica daquela específica ação (Evita contaminação)
+    # - fill_zero   # Substitui NaNs por 0 (Útil para indicadores de volume sem dados)
+
+  # Tratamento de Outliers (Valores Extremos)
+  outlier_handling:
+    - clip_95_5 # Trunca valores extremos nos percentis 5% e 95%
+    # - none    # Mantém os outliers intactos
+
+  # Normalização e Escalonamento
+  scaling:
+    - robust   # RobustScaler: Usado para lidar com finanças devido às caudas longas
+    - standard # StandardScaler: Média 0 e Desvio Padrão 1
+    # - none     # Sem normalização (Ideal se for rodar apenas modelos baseados em Árvores)
+
+# ------------------------------------------------------------------------------
+# 5. MODELOS & DADOS DE HIPERPARÂMETROS (ESPECIFICAÇÕES DOS ESTIMADORES)
+# ------------------------------------------------------------------------------
+models:
+
+  # ----------------------------------------------------------------------------
+  # XGBOOST (Gradient Boosted Trees - Extremamente rápido em GPU)
+  # ----------------------------------------------------------------------------
+  xgboost:
+    pref_queue: gpu_exclusive # Força execução exclusiva em GPU
+    
+    n_estimators: # Quantidade máxima de árvores sequenciais
+      - 300
+      - 500
+    
+    max_depth: # Profundidade máxima de cada árvore
+      - 7
+      - 9
+      - 12
+    
+    learning_rate: # Taxa de aprendizado / Encolhimento do passo (eta)
+      - 0.05
+    
+    subsample: # Porcentagem de linhas (amostras) sorteadas por árvore
+      - 0.7
+    
+    colsample_bytree: # Porcentagem de colunas (features) sorteadas por árvore
+      - 0.7
+    
+    reg_alpha: # Regularização L1 (Lasso) - Zera features irrelevantes na folha
+      - 0.0
+      - 0.1
+    
+    reg_lambda: # Regularização L2 (Ridge) - Suaviza os pesos das folhas contra overfitting
+      - 1.0
+      - 7.0
+    
+    drop_feat: # Seleção/Redução de dimensionalidade
+      - type: top_k
+        k: 40
+      - type: pca
+        k: 40
+        n_components: 3
+      - none
+
+  # ----------------------------------------------------------------------------
+  # LIGHTGBM (Light Gradient Boosting Machine - Alta velocidade e folhas com suporte a categorias)
+  # ----------------------------------------------------------------------------
+  lightgbm:
+    pref_queue: gpu_exclusive
+    
+    n_estimators:
+      - 400
+    
+    max_depth:
+      - 12
+    
+    learning_rate:
+      - 0.05
+    
+    num_leaves: # Número máximo de folhas por árvore (Controle fino de complexidade no LGBM)
+      - 29
+      - 63
+    
+    subsample:
+      - 0.8
+      - 1.0
+    
+    colsample_bytree:
+      - 1.0
+    
+    reg_alpha:
+      - 0.1
+    
+    reg_lambda:
+      - 1.0
+    
+    drop_feat:
+      - type: top_k
+        k: 40
+      - type: pca
+        k: 40
+        n_components: 3
+      - none
+
+  # ----------------------------------------------------------------------------
+  # RANDOM FOREST (Bagging de Árvores de Decisão Independentes)
+  # ----------------------------------------------------------------------------
+  random_forest:
+    pref_queue: cpu # Executa em paralelo via CPU (n_jobs=1 por processo worker)
+    
+    n_estimators: # Número de árvores independentes na floresta
+      - 100
+      - 200
+      - 400
+    
+    max_depth: # Profundidade máxima das árvores
+      - 8
+      - 12
+      - 15
+    
+    max_features: # Quantidade/Porcentagem de colunas a sortear por corte
+      - sqrt # Raiz quadrada do total de colunas (Padrão clássico)
+      - 0.3  # 30% das colunas (Força desancoragem de indicadores dominantes)
+    
+    min_samples_leaf: # Mínimo de amostras exigidas em cada folha (Evita decorar ruído)
+      - 15
+      - 30
+    
+    min_samples_split: # Mínimo de amostras exigidas para permitir uma nova divisão
+      - 10
+      - 20
+    
+    ccp_alpha: # Podamento de Custo-Complexidade (Cost-Complexity Pruning para árvores)
+      - 0.0
+      - 0.01
+    
+    class_weight: # Ponderação de classes para equilibrar alvos raras
+      - balanced
+      - balanced_subsample # Recalcula pesos dinamicamente para cada sub-árvore
+    
+    drop_feat:
+      - type: top_k
+        k: 40
+      - type: pca
+        k: 40
+        n_components: 3
+      - none
+
+  # ----------------------------------------------------------------------------
+  # MLP (Multi-Layer Perceptron / Rede Neural Profunda PyTorch)
+  # ----------------------------------------------------------------------------
+  mlp:
+    pref_queue: gpu_exclusive
+    
+    hidden_layer_sizes: # Arquitetura das camadas ocultas (Neurônios por camada)
+      - [128, 64]       # Rede rasa de 2 camadas
+      - [256, 128]      # Rede média de 2 camadas
+      - [256, 128, 64]  # Rede profunda de 3 camadas
+      - [512, 256, 128] # Rede massiva para capturar relações complexas
+    
+    learning_rate_init: # Taxa de aprendizado inicial do otimizador Adam
+      - 0.001
+      - 0.01
+    
+    max_iter: # Teto máximo de épocas de treinamento
+      - 500
+      - 1000
+    
+    patience: # Tolerância do Early Stopping (Número de épocas sem melhora antes de parar)
+      - 15
+      - 30
+    
+    tol: # Limiar de variação mínima na perda (loss) para resetar o contador de paciência
+      - 0.0001
+      - 0.001
+    
+    activation: # Função de ativação entre os neurônios
+      - relu
+    
+    dropout_p: # Taxa de desativação aleatória de neurônios durante o treino (Evita decorar)
+      - 0.3
+      - 0.4
+    
+    weight_decay: # Penalidade L2 nos pesos dos neurônios PyTorch
+      - 0.0
+      - 0.0001
+    
+    class_weight:
+      - balanced
+      - null # Sem ponderação de pesos na perda CrossEntropy
+    
+    drop_feat:
+      - type: top_k
+        k: 40
+      - type: pca
+        k: 40
+        n_components: 3
+      - none
+
+  # ----------------------------------------------------------------------------
+  # DECISION TREE (Árvore de Decisão Simples / Modelo Interpretável Base)
+  # ----------------------------------------------------------------------------
+  decision_tree:
+    pref_queue: cpu
+    
+    max_depth:
+      - 9
+      - 12
+    
+    min_samples_split:
+      - 10
+      - 20
+    
+    min_samples_leaf:
+      - 5
+      - 15
+    
+    ccp_alpha:
+      - 0.0
+      - 0.01
+    
+    class_weight:
+      - balanced
+    
+    drop_feat:
+      - type: top_k
+        k: 40
+      - type: pca
+        k: 40
+        n_components: 3
+      - none
+
+  # ----------------------------------------------------------------------------
+  # KNN (K-Nearest Neighbors / Vizinhos Mais Próximos Acelerado por PyTorch GPU)
+  # ----------------------------------------------------------------------------
+  knn:
+    pref_queue: gpu # Distância vetorial calculada na placa de vídeo
+    
+    n_neighbors: # Quantidade de vizinhos históricos comparados
+      - 5
+      - 11
+    
+    weights: # Ponderação pela distância (uniforme ou inversamente proporcional)
+      - uniform
+      - distance
+    
+    metric: # Métrica de cálculo de distância vetorial
+      - manhattan # Distância L1 (Mais robusta em espaço multidimensional que a Euclidiana)
+    
+    drop_feat:
+      - type: top_k
+        k: 40
+      - type: pca
+        k: 40
+        n_components: 3
+      - none
+
+  # ----------------------------------------------------------------------------
+  # LOGISTIC REGRESSION (Classificador Linear Base Acelerado por PyTorch)
+  # ----------------------------------------------------------------------------
+  logistic_regression:
+    pref_queue: gpu
+    
+    learning_rate_init:
+      - 0.01
+    
+    max_iter:
+      - 500
+    
+    weight_decay: # Equivalente à regularização L2 da regressão logística
+      - 0.0001
+    
+    class_weight:
+      - balanced
+      - null
+    
+    drop_feat:
+      - none
+
+  # ----------------------------------------------------------------------------
+  # VOTING CLASSIFIER (Ensemble de Votação por Maioria ou Probabilidade)
+  # ----------------------------------------------------------------------------
+  voting_classifier:
+    pref_queue: gpu_exclusive
+    
+    voting: # Tipo de votação
+      - soft # Média das probabilidades (Melhor para calibração)
+      - hard # Voto por maioria simples das saídas
+    
+    drop_feat:
+      - none
