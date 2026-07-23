@@ -42,4 +42,4 @@ def render_grid_search(df_report, sort_metric):
     )
     
     fig.update_layout(margin=dict(l=40, r=40, t=40, b=40))
-    st.plotly_chart(fig, use_container_width=True)
+    st.plotly_chart(fig, width="stretch")
