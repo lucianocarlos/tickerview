@@ -14,7 +14,11 @@ def _init_db(conn):
     cur.execute('''CREATE TABLE IF NOT EXISTS datasets (id INTEGER PRIMARY KEY AUTOINCREMENT, version_hash TEXT NOT NULL UNIQUE, features_count INTEGER, rows_count INTEGER, generation_parameters TEXT, created_at DATETIME DEFAULT (datetime('now', 'localtime')))''')
     cur.execute('''CREATE TABLE IF NOT EXISTS batteries (id INTEGER PRIMARY KEY AUTOINCREMENT, battery_name TEXT, global_config TEXT, elapsed_time_sec FLOAT, created_at DATETIME DEFAULT (datetime('now', 'localtime')), finished_at DATETIME)''')
     cur.execute('''CREATE TABLE IF NOT EXISTS experiments (id INTEGER PRIMARY KEY AUTOINCREMENT, battery_id INTEGER NOT NULL, dataset_id INTEGER NOT NULL, task_type TEXT NOT NULL, target_strategy TEXT, experiment_config TEXT, elapsed_time_sec FLOAT, created_at DATETIME DEFAULT (datetime('now', 'localtime')), FOREIGN KEY (battery_id) REFERENCES batteries (id) ON DELETE CASCADE, FOREIGN KEY (dataset_id) REFERENCES datasets (id) ON DELETE CASCADE)''')
-    cur.execute('''CREATE TABLE IF NOT EXISTS models (id INTEGER PRIMARY KEY AUTOINCREMENT, experiment_id INTEGER NOT NULL, model_name TEXT NOT NULL, hyperparameters TEXT, execution_time_sec FLOAT, created_at DATETIME DEFAULT (datetime('now', 'localtime')), FOREIGN KEY (experiment_id) REFERENCES experiments (id) ON DELETE CASCADE)''')
+    cur.execute('''CREATE TABLE IF NOT EXISTS models (id INTEGER PRIMARY KEY AUTOINCREMENT, experiment_id INTEGER NOT NULL, model_name TEXT NOT NULL, hyperparameters TEXT, execution_time_sec FLOAT, hardware_used TEXT, created_at DATETIME DEFAULT (datetime('now', 'localtime')), FOREIGN KEY (experiment_id) REFERENCES experiments (id) ON DELETE CASCADE)''')
+    try:
+        cur.execute("ALTER TABLE models ADD COLUMN hardware_used TEXT")
+    except sqlite3.OperationalError:
+        pass # A coluna já existe ou acabou de ser criada
     cur.execute('''CREATE TABLE IF NOT EXISTS metrics_classification (model_id INTEGER PRIMARY KEY, val_accuracy FLOAT, val_f1_macro FLOAT, test_accuracy FLOAT, test_f1_macro FLOAT, test_f1_weighted FLOAT, test_precision_macro FLOAT, test_recall_macro FLOAT, confusion_matrix TEXT, FOREIGN KEY (model_id) REFERENCES models (id) ON DELETE CASCADE)''')
     cur.execute('''CREATE TABLE IF NOT EXISTS metrics_clustering (model_id INTEGER PRIMARY KEY, silhouette_score FLOAT, davies_bouldin FLOAT, FOREIGN KEY (model_id) REFERENCES models (id) ON DELETE CASCADE)''')
     cur.execute('''CREATE TABLE IF NOT EXISTS metrics_association (model_id INTEGER PRIMARY KEY, support_avg FLOAT, confidence_avg FLOAT, FOREIGN KEY (model_id) REFERENCES models (id) ON DELETE CASCADE)''')
@@ -167,7 +171,7 @@ def get_trained_models(experiment_id):
     return set((row[0], row[1]) for row in rows)
 
 def save_model_results(experiment_id, model_name, hyperparameters, exec_time_sec, 
-                       metrics_class, confusion_matrix, feature_importances, importance_type="entropy"):
+                       metrics_class, confusion_matrix, feature_importances, importance_type="entropy", hardware_used=None):
     """
     Salva o modelo, as métricas e o XAI no banco em uma única transação segura.
     """
@@ -177,9 +181,9 @@ def save_model_results(experiment_id, model_name, hyperparameters, exec_time_sec
         # 1. Inserir o Modelo
         hparams_str = json.dumps(hyperparameters, ensure_ascii=False) if isinstance(hyperparameters, dict) else hyperparameters
         cur.execute('''
-            INSERT INTO models (experiment_id, model_name, hyperparameters, execution_time_sec)
-            VALUES (?, ?, ?, ?)
-        ''', (experiment_id, model_name, hparams_str, exec_time_sec))
+            INSERT INTO models (experiment_id, model_name, hyperparameters, execution_time_sec, hardware_used)
+            VALUES (?, ?, ?, ?, ?)
+        ''', (experiment_id, model_name, hparams_str, exec_time_sec, hardware_used))
         
         model_id = cur.lastrowid
         

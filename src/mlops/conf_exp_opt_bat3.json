@@ -1,4 +1,14 @@
 {
+    "hardware_config": {
+        "cpu_workers": 13,
+        "gpu_workers": 3,
+        "chunk_size": 15
+    },
+    "_help_hardware_config": {
+        "cpu_workers": "Qtd maxima de processos concorrentes alocados para a CPU (Recomendado: Max de Nucleos Fisicos - 1)",
+        "gpu_workers": "Qtd maxima de processos na placa de video (Ajustar de acordo com a VRAM disponivel)",
+        "chunk_size": "Tamanho ideal do lote. Formula recomendada: Total_Modelos / (5 * (cpu_workers + gpu_workers)). Nao usar valores abaixo de 10 para evitar lentidao no carregamento do disco."
+    },
     "bateria_id": "bateria03",
     "datasets": [
         "dataset002"
@@ -56,6 +66,7 @@
     },
     "models": {
         "xgboost": {
+            "pref_queue": "gpu_exclusive",
             "n_estimators": [
                 300,
                 500
@@ -93,6 +104,7 @@
             ]
         },
         "lightgbm": {
+            "pref_queue": "gpu_exclusive",
             "n_estimators": [
                 400
             ],
@@ -132,6 +144,7 @@
             ]
         },
         "random_forest": {
+            "pref_queue": "cpu",
             "n_estimators": [
                 100,
                 200,
@@ -158,6 +171,7 @@
             ]
         },
         "mlp": {
+            "pref_queue": "gpu_exclusive",
             "hidden_layer_sizes": [
                 [
                     128,
@@ -200,6 +214,7 @@
             ]
         },
         "decision_tree": {
+            "pref_queue": "cpu",
             "max_depth": [
                 9,
                 12
@@ -225,6 +240,7 @@
             ]
         },
         "knn": {
+            "pref_queue": "gpu",
             "n_neighbors": [
                 5,
                 11

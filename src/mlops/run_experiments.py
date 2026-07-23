@@ -12,14 +12,13 @@ os.environ["NUMEXPR_NUM_THREADS"] = "1"
 import json
 import time
 import pandas as pd
+import platform
 from sklearn.model_selection import ParameterGrid
 from joblib import Parallel, delayed
 from collections import defaultdict
 import warnings
 import threading
-import queue
-from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor, as_completed
-import joblib
+from concurrent.futures import ProcessPoolExecutor, wait, FIRST_COMPLETED
 
 # Importações locais do MLOps
 import db_manager
@@ -27,6 +26,47 @@ from classification import classifier
 
 # Suprimir o aviso de parada de worker do loky (Comum ao usar PyTorch via Multiprocessing)
 warnings.filterwarnings("ignore", category=UserWarning, module="joblib.externals.loky")
+
+
+class TaskDispatcher:
+    def __init__(self):
+        self.gpu_exclusive = []
+        self.gpu_native = []
+        self.cpu_native = []
+        self.cpu_exclusive = []
+        self.lock = threading.Lock()
+
+    def add_task(self, pref_queue, cache_path, chunk_modelos, global_permutation):
+        with self.lock:
+            task = (cache_path, chunk_modelos, global_permutation)
+            if pref_queue == "gpu_exclusive":
+                self.gpu_exclusive.append(task)
+            elif pref_queue == "gpu":
+                self.gpu_native.append(task)
+            elif pref_queue == "cpu_exclusive":
+                self.cpu_exclusive.append(task)
+            else:  # defaults to "cpu"
+                self.cpu_native.append(task)
+
+    def get_task_for_gpu(self):
+        with self.lock:
+            if self.gpu_exclusive:
+                return ("GPU-EXCLUSIVE", self.gpu_exclusive.pop(0))
+            if self.gpu_native:
+                return ("GPU-NATIVE", self.gpu_native.pop(0))
+            if self.cpu_native:
+                return ("GPU-STEAL", self.cpu_native.pop(0))
+            return None
+
+    def get_task_for_cpu(self):
+        with self.lock:
+            if self.cpu_exclusive:
+                return ("CPU-EXCLUSIVE", self.cpu_exclusive.pop(0))
+            if self.cpu_native:
+                return ("CPU-NATIVE", self.cpu_native.pop(0))
+            if self.gpu_native:
+                return ("CPU-STEAL", self.gpu_native.pop(0))
+            return None
 
 
 def worker_preprocessamento(
@@ -68,69 +108,6 @@ def worker_preprocessamento(
         return {"status": "success", "exp_id": exp_id}
     except Exception as e:
         return {"status": "error", "exp_id": exp_id, "error_msg": str(e)}
-
-
-def worker_single_model(
-    X_train,
-    y_train,
-    X_val,
-    y_val,
-    X_test,
-    y_test,
-    feature_cols,
-    model_name,
-    params,
-    exp_id,
-    calc_permutation,
-    fs_cache,
-    force_cpu=False,
-):
-    """Treina um único modelo em uma thread separada. Utilizado no Steal Phase da CPU."""
-    # Garante que PyTorch também fique estrangulado em 1 Thread dentro do worker
-    import torch
-    torch.set_num_threads(1)
-    
-    model_start = time.time()
-    try:
-        metrics, conf_mat, feature_importances, importance_type = (
-            classifier.treinar_e_avaliar_modelo_pre_processado(
-                X_train=X_train,
-                y_train=y_train,
-                X_val=X_val,
-                y_val=y_val,
-                X_test=X_test,
-                y_test=y_test,
-                feature_cols=feature_cols,
-                model_name=model_name,
-                hparams=params,
-                calculate_permutation_importance=calc_permutation,
-                fs_cache=fs_cache,
-                force_cpu=force_cpu,
-            )
-        )
-        model_time = time.time() - model_start
-        return [
-            {
-                "status": "success",
-                "exp_id": exp_id,
-                "model_name": model_name,
-                "params": params,
-                "metrics": metrics,
-                "conf_mat": conf_mat,
-                "feature_importances": feature_importances,
-                "importance_type": importance_type,
-                "model_time": model_time,
-            }
-        ]
-    except Exception as e:
-        return [
-            {
-                "status": "error",
-                "exp_id": exp_id,
-                "model_name": model_name,
-                "error_msg": str(e),
-            }
-        ]
 
 
 def worker_treinar_lote(cache_path, modelos_lista, calc_permutation):
@@ -199,11 +176,16 @@ def executar_bateria_teste(config_path):
     # NOVO: Chave mestra de performance
     global_permutation = config.get("calculate_permutation_importance", False)
 
-    # O nome do Datalake vem explicitamente de dentro do JSON (ou usa o nome do arquivo se não existir)
+    # O nome da bateria vem explicitamente de dentro do JSON (ou usa o nome do arquivo se não existir)
     file_name_fallback = os.path.basename(config_path).replace(".json", "")
     battery_name = config.get(
         "baterias_name", config.get("bateria_id", file_name_fallback)
     )
+
+    hardware_config = config.get("hardware_config", {})
+    cpu_workers_limit = hardware_config.get("cpu_workers", 13)
+    gpu_workers_limit = hardware_config.get("gpu_workers", 3)
+    chunk_size_limit = hardware_config.get("chunk_size", 15)
 
     project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 
@@ -279,9 +261,9 @@ def executar_bateria_teste(config_path):
         )
 
         prep_tasks = []
-        todas_as_tasks = []
-        tarefas_cpu = []
-        tarefas_gpu = []
+        todas_as_tasks_agrupadas = defaultdict(
+            lambda: defaultdict(list)
+        )  # cache_path -> pref_queue -> list of models
         exp_ids_to_update = set()
 
         for strategy_item in target_strategies:
@@ -346,9 +328,12 @@ def executar_bateria_teste(config_path):
                                     exp_id
                                 )
 
-                                for model_name, param_grid in models_config.items():
+                                for model_name, param_grid_raw in models_config.items():
                                     if model_name.startswith("_"):
                                         continue
+
+                                    param_grid = param_grid_raw.copy()
+                                    pref_queue = param_grid.pop("pref_queue", "cpu")
 
                                     clean_param_grid = {
                                         k: v
@@ -371,25 +356,10 @@ def executar_bateria_teste(config_path):
                                             model_name,
                                             hparams_str,
                                         ) not in trained_models_set:
-                                            task_tuple = (
-                                                cache_path,
-                                                model_name,
-                                                params,
-                                                exp_id,
-                                                global_permutation,
-                                            )
-                                            todas_as_tasks.append(task_tuple)
-                                            if model_name in [
-                                                "knn",
-                                                "mlp",
-                                                "logistic_regression",
-                                                "voting_classifier",
-                                                "xgboost",
-                                                "lightgbm",
-                                            ]:
-                                                tarefas_gpu.append(task_tuple)
-                                            else:
-                                                tarefas_cpu.append(task_tuple)
+                                            task_tuple = (model_name, params, exp_id)
+                                            todas_as_tasks_agrupadas[cache_path][
+                                                pref_queue
+                                            ].append(task_tuple)
                                         else:
                                             print(
                                                 f"   -> [SKIPPED] {model_name} já treinado nesta arquitetura."
@@ -412,180 +382,162 @@ def executar_bateria_teste(config_path):
                 f"   -> [ESTÁGIO 1 CONCLUÍDO] Todos os Caches criados em {time.time() - prep_start:.1f}s."
             )
 
-        if not todas_as_tasks:
+        # Count total tasks
+        total_tarefas = 0
+        for cp, prefs in todas_as_tasks_agrupadas.items():
+            for pref_q, modelos in prefs.items():
+                total_tarefas += len(modelos)
+
+        if total_tarefas == 0:
             print(
                 "\n[INFO] Todos os modelos já foram treinados neste dataset (100% Retomado). Pulando..."
             )
             continue
 
         print(
-            f"\n[INFO] ESTÁGIO 2: Treinamento Paralelo. Disparando {len(todas_as_tasks)} tarefas para a RTX 2050..."
+            f"\n[INFO] ESTÁGIO 2: Treinamento Paralelo ({total_tarefas} tarefas). TaskDispatcher iniciado às {time.time()}"
         )
+
         parallel_start = time.time()
 
-        # Preparar lotes globais
-        lotes_cpu_dict = defaultdict(list)
-        for cache_path, model_name, params, exp_id, _ in tarefas_cpu:
-            lotes_cpu_dict[cache_path].append((model_name, params, exp_id))
-
-        lotes_gpu_dict = defaultdict(list)
-        for cache_path, model_name, params, exp_id, _ in tarefas_gpu:
-            lotes_gpu_dict[cache_path].append((model_name, params, exp_id))
-
-        lotes_totais = len(lotes_cpu_dict) + len(lotes_gpu_dict)
-        total_tarefas = len(tarefas_cpu) + len(tarefas_gpu)
-        print(
-            f"       -> {len(lotes_cpu_dict)} lotes nativos CPU, {len(lotes_gpu_dict)} lotes nativos GPU"
-        )
-
-        queue_gpu = queue.Queue()
-        for cp, modelos in lotes_gpu_dict.items():
-            queue_gpu.put((cp, modelos))
+        # Configura o Dispatcher com lotes menores para evitar Tail-End Starvation
+        dispatcher = TaskDispatcher()
+        chunk_size = chunk_size_limit
+        for cp, prefs in todas_as_tasks_agrupadas.items():
+            for pref_q, modelos in prefs.items():
+                for i in range(0, len(modelos), chunk_size):
+                    chunk = modelos[i : i + chunk_size]
+                    dispatcher.add_task(pref_q, cp, chunk, global_permutation)
 
         db_lock = threading.Lock()
         modelos_treinados = 0
-        lotes_concluidos = 0
 
-        def processar_resultados_futures(futures, stage_name, num_lotes):
-            nonlocal modelos_treinados, lotes_concluidos
-            lotes_do_estagio = 0
-            for future in as_completed(futures):
-                lote_res = future.result()
-                for res in lote_res:
-                    exp_id_res = res["exp_id"]
-                    if res["status"] == "success":
-                        with db_lock:
-                            db_manager.save_model_results(
-                                experiment_id=exp_id_res,
-                                model_name=res["model_name"],
-                                hyperparameters=res["params"],
-                                exec_time_sec=res["model_time"],
-                                metrics_class=res["metrics"],
-                                confusion_matrix=res["conf_mat"],
-                                feature_importances=res["feature_importances"],
-                                importance_type=res["importance_type"],
-                            )
-                        modelos_treinados += 1
+        def run_worker_pool(pool_name, max_workers, get_task_fn, initializer=None, initargs=()):
+            print(f"\n[INFO] INICIANDO Pool {pool_name} ({max_workers} workers)...")
+            with ProcessPoolExecutor(max_workers=max_workers, initializer=initializer, initargs=initargs) as executor:
+                futures_map = {}
 
-                        elapsed = time.time() - parallel_start
-                        vel = modelos_treinados / elapsed
-                        rem = total_tarefas - modelos_treinados
-                        eta = rem / vel if vel > 0 else 0
-                        eta_m, eta_s = divmod(int(eta), 60)
+                while True:
+                    # Tenta manter o pool sempre cheio
+                    while len(futures_map) < max_workers:
+                        task_obj = get_task_fn()
+                        if task_obj is None:
+                            break
 
-                        print(
-                            f"   -> [{stage_name}] Exp {exp_id_res}: {res['model_name']} salvo. F1: {res['metrics']['test_f1_macro']:.4f} | Tempo: {res['model_time']:.1f}s | ETA: {eta_m}m {eta_s}s"
-                        )
-                    elif res["status"] == "error":
-                        print(
-                            f"   -> [ERRO FATAL] Exp {exp_id_res}: Falha no {res['model_name']}: {res['error_msg']}"
-                        )
+                        queue_type, (cp, chunk, g_perm) = task_obj
+                        future = executor.submit(worker_treinar_lote, cp, chunk, g_perm)
+                        futures_map[future] = queue_type
 
-                with db_lock:
-                    lotes_concluidos += 1
-                    lotes_do_estagio += 1
+                    if not futures_map:
+                        break  # Acabaram as tarefas no Dispatcher
 
-                if lotes_do_estagio >= num_lotes:
-                    break
-
-        def run_gpu():
-            print(
-                f"\n[INFO] INICIANDO Fila de GPU: {len(tarefas_gpu)} modelos na base..."
-            )
-            with ProcessPoolExecutor(max_workers=3) as executor:
-                while not queue_gpu.empty():
-                    try:
-                        cp, modelos = queue_gpu.get_nowait()
-                    except queue.Empty:
-                        break
-
-                    gpu_futures = []
-                    chunk_size = 50
-                    for i in range(0, len(modelos), chunk_size):
-                        chunk = modelos[i : i + chunk_size]
-                        gpu_futures.append(
-                            executor.submit(
-                                worker_treinar_lote, cp, chunk, global_permutation
-                            )
-                        )
-                    processar_resultados_futures(
-                        gpu_futures, "GPU-NATIVE", len(gpu_futures)
+                    # Espera a PRIMEIRA tarefa finalizar
+                    done, not_done = wait(
+                        futures_map.keys(),
+                        return_when=FIRST_COMPLETED,
                     )
-            print("[INFO] Fila de GPU finalizada.")
+
+                    for future in done:
+                        q_type = futures_map.pop(future)
+                        try:
+                            lote_res = future.result()
+                            for res in lote_res:
+                                exp_id_res = res["exp_id"]
+                                if res["status"] == "success":
+                                    with db_lock:
+                                        db_manager.save_model_results(
+                                            experiment_id=exp_id_res,
+                                            model_name=res["model_name"],
+                                            hyperparameters=res["params"],
+                                            exec_time_sec=res["model_time"],
+                                            metrics_class=res["metrics"],
+                                            confusion_matrix=res["conf_mat"],
+                                            feature_importances=res[
+                                                "feature_importances"
+                                            ],
+                                            importance_type=res["importance_type"],
+                                            hardware_used=pool_name,
+                                        )
+                                    with db_lock:
+                                        nonlocal modelos_treinados
+                                        modelos_treinados += 1
+
+                                    elapsed = time.time() - parallel_start
+                                    vel = modelos_treinados / elapsed
+                                    rem = total_tarefas - modelos_treinados
+                                    eta = rem / vel if vel > 0 else 0
+                                    eta_m, eta_s = divmod(int(eta), 60)
+
+                                    print(
+                                        f"   -> [{pool_name[:3].upper()}:{q_type}] Exp {exp_id_res}: {res['model_name']} salvo. F1: {res['metrics']['test_f1_macro']:.4f} | Tempo: {res['model_time']:.1f}s | Modelos: {modelos_treinados}/{total_tarefas} | ETA: {eta_m}m {eta_s}s"
+                                    )
+                                elif res["status"] == "error":
+                                    print(
+                                        f"   -> [ERRO FATAL] Exp {exp_id_res}: Falha no {res['model_name']}: {res['error_msg']}"
+                                    )
+                        except Exception as e:
+                            print(
+                                f"[ERRO LOTE] Erro ao processar resultado do pool: {e}"
+                            )
+
+            print(
+                f"[INFO] Pool {pool_name} finalizado (Fila completamente esgotada para ele)."
+            )
+
+        def init_gpu_env(d_id):
+            import os
+            os.environ["CUDA_VISIBLE_DEVICES"] = str(d_id)
+
+        def run_gpu(device_id, workers):
+            gpu_name = f"gpu-{device_id}"
+            try:
+                import torch
+                if torch.cuda.is_available() and device_id < torch.cuda.device_count():
+                    gpu_name = f"gpu-{torch.cuda.get_device_name(device_id).lower()}"
+            except Exception:
+                pass
+            run_worker_pool(gpu_name, workers, dispatcher.get_task_for_gpu, initializer=init_gpu_env, initargs=(device_id,))
 
         def run_cpu():
-            print(
-                f"\n[INFO] INICIANDO Fila de CPU: {len(tarefas_cpu)} modelos nativos..."
-            )
-            with ProcessPoolExecutor(max_workers=13) as executor:
-                cpu_futures = []
-                for cp, modelos in lotes_cpu_dict.items():
-                    chunk_size = 50
-                    for i in range(0, len(modelos), chunk_size):
-                        chunk = modelos[i : i + chunk_size]
-                        cpu_futures.append(
-                            executor.submit(
-                                worker_treinar_lote, cp, chunk, global_permutation
-                            )
-                        )
-                processar_resultados_futures(
-                    cpu_futures, "CPU-NATIVE", len(cpu_futures)
-                )
-            print(
-                "[INFO] Fase nativa da CPU finalizada. Iniciando CPU-STEAL (Roubo de Carga)..."
-            )
+            cpu_name = "cpu"
+            try:
+                import platform
+                proc_info = platform.processor() or "cpu"
+                cpu_name = f"cpu-{proc_info.lower()}"
+            except Exception:
+                pass
+            
+            def init_cpu_env():
+                import os
+                # Impede que a CPU enxergue qualquer GPU acidentalmente
+                os.environ["CUDA_VISIBLE_DEVICES"] = ""
+                
+            run_worker_pool(cpu_name, cpu_workers_limit, dispatcher.get_task_for_cpu, initializer=init_cpu_env)
 
-            # CPU Steal Phase
-            lote_roubado = 1
-            while not queue_gpu.empty():
-                try:
-                    cp, modelos = queue_gpu.get_nowait()
-                except queue.Empty:
-                    break
+        threads = []
+        
+        # Inicia pools de GPU(s)
+        if isinstance(gpu_workers_limit, list):
+            for i, w in enumerate(gpu_workers_limit):
+                if w > 0:
+                    t = threading.Thread(target=run_gpu, args=(i, w))
+                    threads.append(t)
+                    t.start()
+        else:
+            if gpu_workers_limit > 0:
+                t = threading.Thread(target=run_gpu, args=(0, gpu_workers_limit))
+                threads.append(t)
+                t.start()
 
-                print(
-                    f"\n[CPU-STEAL LOTE {lote_roubado}] Matriz em RAM. Enfileirando {len(modelos)} modelos (13 simultâneos, 1 thread cada)..."
-                )
-                X_train, y_train, X_val, y_val, X_test, y_test, feature_cols = (
-                    joblib.load(cp)
-                )
-                fs_cache = {}
+        # Inicia pool de CPU
+        if cpu_workers_limit > 0:
+            t_cpu = threading.Thread(target=run_cpu)
+            threads.append(t_cpu)
+            t_cpu.start()
 
-                with ThreadPoolExecutor(max_workers=13) as steal_executor:
-                    steal_futures = [
-                        steal_executor.submit(
-                            worker_single_model,
-                            X_train,
-                            y_train,
-                            X_val,
-                            y_val,
-                            X_test,
-                            y_test,
-                            feature_cols,
-                            model_name,
-                            params,
-                            exp_id,
-                            global_permutation,
-                            fs_cache,
-                            force_cpu=True,
-                        )
-                        for model_name, params, exp_id in modelos
-                    ]
-                    processar_resultados_futures(
-                        steal_futures, "CPU-STEAL", len(steal_futures)
-                    )
-                lote_roubado += 1
-
-            print("[INFO] Steal Phase concluída. CPU ociosa.")
-
-        t_gpu = threading.Thread(target=run_gpu)
-        t_cpu = threading.Thread(target=run_cpu)
-
-        t_gpu.start()
-        t_cpu.start()
-
-        t_gpu.join()
-        t_cpu.join()
+        # Aguarda todas as threads
+        for t in threads:
+            t.join()
 
         parallel_time = time.time() - parallel_start
         for eid in exp_ids_to_update:
@@ -606,7 +558,7 @@ def executar_bateria_teste(config_path):
     # SUMÁRIO FINAL DA BATERIA
     # ---------------------------------------------------------
     try:
-        from datetime import datetime, timedelta
+        from datetime import timedelta
 
         conn = db_manager.get_connection()
 
@@ -685,9 +637,7 @@ if __name__ == "__main__":
         caminho_json = sys.argv[1]
     else:
         # Carregamento autônomo sem necessidade de passagem de parâmetro
-        caminho_json = os.path.join(
-            os.path.dirname(__file__), "config_experiment_bateria03.json"
-        )
+        caminho_json = os.path.join(os.path.dirname(__file__), "conf_exp_opt.json")
         print(f"[SETUP] Nenhum parâmetro fornecido. Carregando padrão: {caminho_json}")
 
     executar_bateria_teste(caminho_json)

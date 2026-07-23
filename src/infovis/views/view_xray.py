@@ -15,7 +15,7 @@ def render_xray(df_report, exp_id_selecionado):
 
     # Encolhendo o título para o mesmo tamanho dos números (1.2em) e cor forte
     st.markdown(
-        f"<div style='font-size:1.2em; font-weight:bold; margin-bottom: 10px;'>Detalhes de {exp_id_selecionado}</div>",
+        f"<div style='font-size:1.2em; font-weight:bold; margin-bottom: 10px;'>Detalhes de id:{exp_id_selecionado} | {row['target_strategy']} | {row['model_type']}</div>",
         unsafe_allow_html=True,
     )
 
@@ -72,7 +72,7 @@ def render_xray(df_report, exp_id_selecionado):
             margin=dict(t=20, b=20, l=30, r=30),
             height=250,
         )
-        st.plotly_chart(fig_spider, use_container_width=True)
+        st.plotly_chart(fig_spider, width="stretch")
 
     with col_cm:
         st.markdown("**Matriz de Confusão**")
@@ -92,7 +92,7 @@ def render_xray(df_report, exp_id_selecionado):
                 xaxis=dict(tickmode="linear"),
                 yaxis=dict(tickmode="linear"),
             )
-            st.plotly_chart(fig_cm, use_container_width=True)
+            st.plotly_chart(fig_cm, width="stretch")
         except Exception as e:
             st.warning("Matriz de Confusão indisponível.")
 
@@ -103,7 +103,11 @@ def render_xray(df_report, exp_id_selecionado):
             st.json(row["parameters"])
         with col_table:
             st.write("**Tabela de Dados Brutos**")
-            st.dataframe(pd.DataFrame([row]), use_container_width=True, height=100)
+            df_row = pd.DataFrame([row])
+            for col in df_row.columns:
+                if df_row[col].apply(lambda x: isinstance(x, (dict, list))).any():
+                    df_row[col] = df_row[col].astype(str)
+            st.dataframe(df_row, width="stretch", height=100)
 
     # Nova seção de XAI (Explainable AI) extraída do Datalake
     st.markdown("---")
@@ -133,7 +137,7 @@ def render_xray(df_report, exp_id_selecionado):
         fig_xai.update_layout(
             margin=dict(t=10, b=20, l=10, r=10), height=300, coloraxis_showscale=False
         )
-        st.plotly_chart(fig_xai, use_container_width=True)
+        st.plotly_chart(fig_xai, width="stretch")
     else:
         st.info(
             "Nenhuma matriz de explicabilidade (XAI) nativa foi encontrada no Datalake para este modelo. Isto ocorre em modelos caixa-preta (ex: Redes Neurais, KNN) ou não-particionados (Logística, Ensembles)"

@@ -373,7 +373,7 @@ def render_summary_card(
             showlegend=False,
         )
 
-    st.plotly_chart(fig, use_container_width=True, key=f"summary_hist_hz_{panel_id}")
+    st.plotly_chart(fig, width="stretch", key=f"summary_hist_hz_{panel_id}")
 
 
 def render_horizontal_ribbon(
@@ -398,6 +398,9 @@ def render_horizontal_ribbon(
 
     for i, row in df_limited.iterrows():
         with cols[i]:
+            if i == 0:
+                st.markdown("<div class='ribbon-column-marker' style='display:none'></div>", unsafe_allow_html=True)
+                
             is_selected = (st.session_state.get("selected_exp") == row["exp_id"]) and (
                 st.session_state.get("selected_dataset") == current_dataset
             )
@@ -407,15 +410,13 @@ def render_horizontal_ribbon(
                     "<div class='selected-card-marker'></div>", unsafe_allow_html=True
                 )
 
-            btn_label = (
-                f"id:{row['exp_id']} | {row['model_type']} | {row[sort_metric]:.4f}"
-            )
-            c1, c2, c3 = st.columns([0.80, 0.10, 0.10])
+            btn_label = f"id:{row['exp_id']} | {row['model_type'][:10]} | {row['target_strategy'][:10]} | {row[sort_metric]:.4f}"
+            c1, c2, c3 = st.columns([0.80, 0.09, 0.09])
             with c1:
                 if st.button(
                     btn_label,
                     key=f"btn_hz_{panel_id}_{row['exp_id']}_{i}",
-                    use_container_width=True,
+                    width="stretch",
                     type="tertiary",
                 ):
                     if is_selected:
@@ -428,10 +429,11 @@ def render_horizontal_ribbon(
                         st.rerun()
             with c2:
                 if st.button(
-                    "**:gray[[=]]**",
+                    "**:green[[=]]**",
                     key=f"btn_cmp_{panel_id}_{row['exp_id']}_{i}",
-                    use_container_width=True,
+                    width="stretch",
                     type="tertiary",
+                    help="comparar",
                 ):
                     if st.session_state.get("selected_exp") is None:
                         st.toast("Selecione um Modelo Primeiro (clicando no nome dele)")
@@ -447,8 +449,9 @@ def render_horizontal_ribbon(
                 if st.button(
                     "**:red[[+]]**",
                     key=f"btn_xray_{panel_id}_{row['exp_id']}_{i}",
-                    use_container_width=True,
+                    width="stretch",
                     type="tertiary",
+                    help="raio-x",
                 ):
                     # Não altera a seleção global, apenas abre o XRay para este id
                     st.session_state[f"open_dialog_{panel_id}"] = row["exp_id"]
@@ -524,7 +527,7 @@ def render_horizontal_ribbon(
             )
             st.plotly_chart(
                 fig,
-                use_container_width=True,
+                width="stretch",
                 key=f"spider_hz_{panel_id}_{row['exp_id']}_{i}",
             )
 

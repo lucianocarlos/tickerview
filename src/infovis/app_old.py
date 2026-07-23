@@ -572,7 +572,12 @@ def main():
             padding-left: 5px !important;
             padding-right: 5px !important;
             max-width: 99% !important;
-            
+        }
+        div[data-testid="column"] {
+            gap: 0rem !important;
+        }
+        div[data-testid="column"] [data-testid="stVerticalBlock"] {
+            gap: 0rem !important;
         }
         div[data-testid="stHorizontalBlock"] [data-testid="stVerticalBlock"] {
             gap: 0rem !important;
@@ -585,20 +590,84 @@ def main():
             margin-top: 0rem !important;
             margin-bottom: 0rem !important;
             padding-top: 0rem !important;
-            padding-bottom: 0rem !important;             
+            padding-bottom: 0rem !important;
         }
         
         hr {
             margin-top: 0px !important;
-            margin-bottom: 10px !important;            
+            margin-bottom: 10px !important;
         }
         div[data-testid="stHorizontalBlock"] {
-            gap: 0.5rem !important;            
+            gap: 0.5rem !important;
         }
-                    
+        
+        [data-testid="stSelectbox"] > div > div {
+            background-color: transparent !important;
+            border: none !important;
+            box-shadow: none !important;
+            font-size: 0.9em;
+            cursor: pointer;
+            padding-top: 0 !important;
+            padding-bottom: 0 !important;
+            min-height: 1rem !important;
+        }
+        [data-testid="stSelectbox"] label { display: none; }
+        div[data-testid="stSelectbox"] > label { display: none !important; }
+        
+        /* Estilos do Menu Vertical Popover para parecer um Toolbar limpo */
+        div[data-testid="stPopover"] > button {
+            background-color: transparent !important;
+            border: none !important;
+            padding: 0 !important;
+            color: gray;
+            font-size: 1.5em;
+            width: 100%;
+        }
+        div[data-testid="stPopover"] > button:hover {
+            color: #5A92D8 !important;
+            border-color: transparent !important;
+            background-color: transparent !important;
+        }
+        div[data-testid="stPopover"] > button:focus {
+            color: #5A92D8 !important;
+            border-color: transparent !important;
+            background-color: transparent !important;
+            box-shadow: none !important;
+        }
+        
+        /* Scroll horizontal na fita de experimentos */
+        div[data-testid="stElementContainer"]:has(.horizontal-scroll-marker) + div[data-testid="stHorizontalBlock"] {
+            overflow-x: auto !important;
+            flex-wrap: nowrap !important;
+            padding-top: 6px !important;
+            padding-bottom: 5px !important;
+            align-items: flex-start !important;
+            margin-top: 0px !important; /* Reset child margin-top */
+        }
+        
         /* Desloca a coluna inteira da fita para cima para alinhar com o topo do resumo */
         div[data-testid="stHorizontalBlock"]:has(.horizontal-scroll-marker) > div[data-testid="stColumn"]:nth-child(2) {
-            margin-top: -10px !important;  
+            margin-top: -10px !important;
+        }
+        
+        /* Oculta o contêiner vazio do marcador para eliminar o gap/espaço vertical */
+        div[data-testid="stElementContainer"]:has(.horizontal-scroll-marker) {
+            display: none !important;
+        }
+        
+        /* Ajustes de compactação dos cards na fita */
+        div[data-testid="stElementContainer"]:has(.horizontal-scroll-marker) + div[data-testid="stHorizontalBlock"] [data-testid="stColumn"] div.stButton {
+            margin-top: -15px !important;
+            margin-bottom: -1px !important;
+        }
+        div[data-testid="stElementContainer"]:has(.horizontal-scroll-marker) + div[data-testid="stHorizontalBlock"] [data-testid="stColumn"] div.stButton > button {
+            height: 24px !important;
+            min-height: 24px !important;
+            padding: 0 !important;
+            font-size: 0.85em !important;
+            font-weight: bold !important;
+            border: none !important;
+            background: transparent !important;
         }
 
         /* Forçando a barra pesada contra o p, span e divs do Streamlit */
@@ -691,6 +760,7 @@ def main():
     if df_report_main is not None:
         render_grid_search(df_report_main)
     # render_cluster(df_mestre) # Desativado temporariamente
+
     st.iframe(
         """
     <script>
@@ -699,49 +769,60 @@ def main():
     }
     window.parent.ribbonInterval = setInterval(() => {
         const doc = window.parent.document;
-        const markers = doc.querySelectorAll('.ribbon-column-marker');
+        // Procura os marcadores invisíveis que injetamos logo antes da fita
+        const markers = doc.querySelectorAll('.horizontal-scroll-marker');
         
         markers.forEach(marker => {
-            const b = marker.closest('[data-testid="stHorizontalBlock"]');
-            if (b) {
-                b.style.setProperty("overflow-x", "auto", "important");
-                b.style.setProperty("flex-wrap", "nowrap", "important");
-                b.style.setProperty("padding-top", "6px", "important");
-                b.style.setProperty("padding-bottom", "5px", "important");
-                
-                if(b.children.length > 0) {
-                    b.children[0].style.removeProperty("position");
-                    b.children[0].style.removeProperty("left");
-                    b.children[0].style.removeProperty("z-index");
-                    b.children[0].style.removeProperty("background-color");
+            // Sobe até o container do Streamlit que guarda o marcador
+            let container = marker.closest('[data-testid="stElementContainer"]');
+            if (container) {
+                let b = container.nextElementSibling;
+                // Procura o próximo stHorizontalBlock (pula possíveis elementos ocultos vazios do Streamlit)
+                while (b && b.getAttribute('data-testid') !== 'stHorizontalBlock') {
+                    b = b.nextElementSibling;
                 }
                 
-                for(let i=0; i<b.children.length; i++) {
-                    let col = b.children[i];
-                    col.style.setProperty("min-width", "320px", "important");
-                    col.style.setProperty("width", "320px", "important");
-                    col.style.setProperty("max-width", "320px", "important");
-                    col.style.setProperty("flex", "0 0 320px", "important");
+                if (b && b.getAttribute('data-testid') === 'stHorizontalBlock') {
                     
-                    if(col.querySelector('.selected-card-marker')) {
-                        col.style.setProperty("border", "2px solid #5A92D8", "important");
-                        col.style.setProperty("border-radius", "10px", "important");
-                        col.style.setProperty("background-color", "rgba(90, 146, 216, 0.05)", "important");
-                        col.style.setProperty("padding", "5px", "important");
+                    b.style.setProperty("overflow-x", "auto", "important");
+                    b.style.setProperty("flex-wrap", "nowrap", "important");
+                    b.style.setProperty("padding-top", "6px", "important");
+                    b.style.setProperty("padding-bottom", "5px", "important");
+                    
+                    if(b.children.length > 0) {
+                        b.children[0].style.removeProperty("position");
+                        b.children[0].style.removeProperty("left");
+                        b.children[0].style.removeProperty("z-index");
+                        b.children[0].style.removeProperty("background-color");
+                    }
+                    
+                    for(let i=0; i<b.children.length; i++) {
+                        let col = b.children[i];
+                        col.style.setProperty("min-width", "320px", "important");
+                        col.style.setProperty("width", "320px", "important");
+                        col.style.setProperty("max-width", "320px", "important");
+                        col.style.setProperty("flex", "0 0 320px", "important");
                         
-                        if(!col.classList.contains("scrolled-to")) {
-                            const containerRect = b.getBoundingClientRect();
-                            const colRect = col.getBoundingClientRect();
-                            const scrollAmount = b.scrollLeft + (colRect.left - containerRect.left) - (containerRect.width / 2) + (colRect.width / 2);
-                            b.scrollTo({left: scrollAmount, behavior: 'smooth'});
-                            col.classList.add("scrolled-to");
+                        if(col.querySelector('.selected-card-marker')) {
+                            col.style.setProperty("border", "2px solid #5A92D8", "important");
+                            col.style.setProperty("border-radius", "10px", "important");
+                            col.style.setProperty("background-color", "rgba(90, 146, 216, 0.05)", "important");
+                            col.style.setProperty("padding", "5px", "important");
+                            
+                            if(!col.classList.contains("scrolled-to")) {
+                                const containerRect = b.getBoundingClientRect();
+                                const colRect = col.getBoundingClientRect();
+                                const scrollAmount = b.scrollLeft + (colRect.left - containerRect.left) - (containerRect.width / 2) + (colRect.width / 2);
+                                b.scrollTo({left: scrollAmount, behavior: 'smooth'});
+                                col.classList.add("scrolled-to");
+                            }
+                        } else {
+                            col.style.removeProperty("border");
+                            col.style.removeProperty("border-radius");
+                            col.style.removeProperty("background-color");
+                            col.style.removeProperty("padding");
+                            col.classList.remove("scrolled-to");
                         }
-                    } else {
-                        col.style.removeProperty("border");
-                        col.style.removeProperty("border-radius");
-                        col.style.removeProperty("background-color");
-                        col.style.removeProperty("padding");
-                        col.classList.remove("scrolled-to");
                     }
                 }
             }

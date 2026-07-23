@@ -302,13 +302,23 @@ except ImportError:
 
 def gerar_target(df, strategy, config_target):
     """
-    Gera a variável alvo (Y) de forma determinística.
+    Gera a variável alvo (Y) de forma determinística com calibração adaptativa de volatilidade.
     """
     df = df.copy()
     df = df.sort_values(["ticker", "Date"]).reset_index(drop=True)
 
     horizon = config_target.get("horizon_days", 10)
     threshold = config_target.get("threshold", 0.02)
+    use_vol_scaling = config_target.get("use_vol_scaling", True)
+
+    # Cálculo da volatilidade normalizada no horizonte H se disponível
+    has_vol = "Volatilidade_21d" in df.columns and use_vol_scaling
+    if has_vol:
+        # Volatilidade adaptativa ajustada pela raiz do horizonte de tempo (anualizado)
+        scale_factor = np.sqrt(horizon / 252.0)
+        vol_h = (df["Volatilidade_21d"] * scale_factor).clip(lower=0.01)
+    else:
+        vol_h = threshold
 
     if strategy == "outperformance":
         df["Future_Return"] = (
@@ -316,18 +326,34 @@ def gerar_target(df, strategy, config_target):
         )
         benchmark_return = df.groupby("Date")["Future_Return"].transform("median")
         df["Excess_Future_Return"] = df["Future_Return"] - benchmark_return
-        df["target"] = (df["Excess_Future_Return"] >= threshold).astype(float)
+        
+        # Limiar adaptativo: garante que a outperformance seja estatisticamente significativa
+        if has_vol:
+            dynamic_thresh = np.maximum(threshold, vol_h * 0.5)
+        else:
+            dynamic_thresh = threshold
+
+        df["target"] = (df["Excess_Future_Return"] >= dynamic_thresh).astype(float)
         df.loc[df["Future_Return"].isna(), "target"] = np.nan
         cols_to_drop = ["Future_Return", "Excess_Future_Return"]
 
     elif strategy == "volatility_regime":
+        # Janela móvel de volatilidade no horizonte H
         df["Future_Vol"] = df.groupby("ticker")["Retorno_Diario"].transform(
-            lambda x: x.rolling(window=horizon).std().shift(-horizon) * np.sqrt(252)
+            lambda x: x.rolling(window=max(horizon, 5), min_periods=3).std().shift(-horizon) * np.sqrt(252)
         )
-        threshold_vol = df.groupby("ticker")["Volatilidade_21d"].transform(
-            lambda x: x.quantile(0.70)
-        )
-        df["target"] = (df["Future_Vol"] > threshold_vol).astype(float)
+        
+        if has_vol:
+            # Razão de expansão de volatilidade: detecta se a volatilidade futura expande > 20% sobre a média de 21d
+            vol_expansion_ratio = df["Future_Vol"] / df["Volatilidade_21d"].replace(0, np.nan)
+            ratio_thresh = config_target.get("expansion_ratio", 1.20)
+            df["target"] = (vol_expansion_ratio > ratio_thresh).astype(float)
+        else:
+            threshold_vol = df.groupby("ticker")["Volatilidade_21d"].transform(
+                lambda x: x.quantile(0.70)
+            )
+            df["target"] = (df["Future_Vol"] > threshold_vol).astype(float)
+
         df.loc[df["Future_Vol"].isna(), "target"] = np.nan
         cols_to_drop = ["Future_Vol"]
 
@@ -335,9 +361,16 @@ def gerar_target(df, strategy, config_target):
         df["Future_Return"] = (
             df.groupby("ticker")["Close"].shift(-horizon) / df["Close"] - 1
         )
-        df["target"] = 1.0  # Flat
-        df.loc[df["Future_Return"] > threshold, "target"] = 2.0  # Bull
-        df.loc[df["Future_Return"] < -threshold, "target"] = 0.0  # Bear
+        
+        # Limiar de transição de regime ajustado por ativo (evita colapso na classe Flat em papéis defensivos)
+        if has_vol:
+            dynamic_thresh = np.maximum(0.015, vol_h * 0.75)
+        else:
+            dynamic_thresh = threshold
+
+        df["target"] = 1.0  # Flat / Neutro
+        df.loc[df["Future_Return"] > dynamic_thresh, "target"] = 2.0  # Bull
+        df.loc[df["Future_Return"] < -dynamic_thresh, "target"] = 0.0  # Bear
         df.loc[df["Future_Return"].isna(), "target"] = np.nan
         cols_to_drop = ["Future_Return"]
 
@@ -349,18 +382,31 @@ def gerar_target(df, strategy, config_target):
         )
         cond_prejuizo_hoje = df["Lucro_Prejuizo_Periodo"] < 0
         cond_lucro_futuro = df["Future_Lucro"] > 0
-        df["target"] = (cond_prejuizo_hoje & cond_lucro_futuro).astype(float)
+        
+        # Se houver EBIT, valida se também houve recuperação operacional
+        if "EBIT_Operacional" in df.columns:
+            df["Future_EBIT"] = df.groupby("ticker")["EBIT_Operacional"].shift(-horizon)
+            cond_ebit_rec = df["Future_EBIT"] > df["EBIT_Operacional"]
+            df["target"] = (cond_prejuizo_hoje & cond_lucro_futuro & cond_ebit_rec).astype(float)
+            cols_to_drop = ["Future_Lucro", "Future_EBIT"]
+        else:
+            df["target"] = (cond_prejuizo_hoje & cond_lucro_futuro).astype(float)
+            cols_to_drop = ["Future_Lucro"]
+
         df.loc[df["Future_Lucro"].isna(), "target"] = np.nan
-        cols_to_drop = ["Future_Lucro"]
 
     elif strategy == "drawdown_risk":
         df["Future_Min_Close"] = df.groupby("ticker")["Close"].transform(
-            lambda x: x.rolling(window=horizon).min().shift(-horizon)
+            lambda x: x.rolling(window=horizon, min_periods=1).min().shift(-horizon)
         )
         df["Drawdown_Futuro"] = (df["Future_Min_Close"] / df["Close"]) - 1
-        # Garante que o threshold seja aplicado de forma negativa (queda)
-        threshold_dd = -abs(threshold)
-        df["target"] = (df["Drawdown_Futuro"] < threshold_dd).astype(float)
+        
+        if has_vol:
+            dynamic_dd = -np.maximum(abs(threshold), vol_h * 0.6)
+        else:
+            dynamic_dd = -abs(threshold)
+
+        df["target"] = (df["Drawdown_Futuro"] < dynamic_dd).astype(float)
         df.loc[df["Future_Min_Close"].isna(), "target"] = np.nan
         cols_to_drop = ["Future_Min_Close", "Drawdown_Futuro"]
 
@@ -369,7 +415,6 @@ def gerar_target(df, strategy, config_target):
 
         def get_min_future(x):
             import pandas as pd
-
             fwd = pd.concat([x.shift(-i) for i in range(1, horizon + 1)], axis=1)
             return fwd.min(axis=1)
 
@@ -377,17 +422,149 @@ def gerar_target(df, strategy, config_target):
         df["Future_Drawdown"] = (df["Future_Min_Close"] - df["Close"]) / df[
             "Close"
         ].replace(0, 1)
-        # Aplica o threshold dinâmico do JSON garantindo sinal negativo
-        threshold_crash = -abs(threshold)
-        cond_crash = df["Future_Drawdown"] < threshold_crash
-        df["target"] = (cond_div & cond_crash).astype(int)
+
+        if has_vol:
+            dynamic_crash = -np.maximum(abs(threshold), vol_h * 0.7)
+        else:
+            dynamic_crash = -abs(threshold)
+
+        cond_crash = df["Future_Drawdown"] < dynamic_crash
+        df["target"] = (cond_div & cond_crash).astype(float)
         df.loc[df["Future_Min_Close"].isna(), "target"] = np.nan
         cols_to_drop = ["Future_Min_Close", "Future_Drawdown"]
+
+    elif strategy == "triple_barrier":
+        pt_sl_ratio = config_target.get("pt_sl_ratio", [1.0, 1.0])
+        up_factor, down_factor = pt_sl_ratio[0], pt_sl_ratio[1]
+        
+        vol_barrier = vol_h if has_vol else threshold
+        up_limit = up_factor * vol_barrier
+        dn_limit = -down_factor * vol_barrier
+        
+        fwd_returns = pd.concat([(df.groupby("ticker")["Close"].shift(-h) / df["Close"]) - 1 for h in range(1, horizon + 1)], axis=1)
+        
+        hit_up = fwd_returns.ge(up_limit, axis=0).values
+        hit_dn = fwd_returns.le(dn_limit, axis=0).values
+        
+        hit_up_idx = np.argmax(hit_up, axis=1)
+        hit_dn_idx = np.argmax(hit_dn, axis=1)
+        
+        up_valid = hit_up[np.arange(len(hit_up)), hit_up_idx]
+        dn_valid = hit_dn[np.arange(len(hit_dn)), hit_dn_idx]
+        
+        hit_up_idx = np.where(up_valid, hit_up_idx, 9999)
+        hit_dn_idx = np.where(dn_valid, hit_dn_idx, 9999)
+        
+        target = np.full(len(df), np.nan)
+        
+        mask_up_first = (hit_up_idx < hit_dn_idx)
+        target[mask_up_first] = 1.0
+        
+        mask_dn_first = (hit_dn_idx < hit_up_idx)
+        target[mask_dn_first] = 0.0
+        
+        mask_simul = (hit_up_idx == hit_dn_idx) & (hit_up_idx != 9999)
+        target[mask_simul] = 0.0
+        
+        mask_no_hit = (hit_up_idx == 9999) & (hit_dn_idx == 9999)
+        final_ret = fwd_returns.iloc[:, -1].values
+        target[mask_no_hit] = np.where(final_ret[mask_no_hit] > 0, 1.0, 0.0)
+        
+        df["target"] = target
+        df.loc[fwd_returns.iloc[:, -1].isna(), "target"] = np.nan
+        cols_to_drop = []
+
+    elif strategy == "vol_adjusted_return":
+        future_return = df.groupby("ticker")["Close"].shift(-horizon) / df["Close"] - 1
+        vol_adjusted = future_return / vol_h
+        dynamic_thresh = config_target.get("sharpe_threshold", 0.5)
+        df["target"] = (vol_adjusted >= dynamic_thresh).astype(float)
+        df.loc[future_return.isna(), "target"] = np.nan
+        cols_to_drop = []
+
+    elif strategy == "cross_sectional_quantiles":
+        future_return = df.groupby("ticker")["Close"].shift(-horizon) / df["Close"] - 1
+        df["Future_Return"] = future_return
+        
+        quantiles = config_target.get("quantiles", 5)
+        def rank_quantiles(s):
+            if s.notna().sum() < quantiles: return pd.Series(np.nan, index=s.index)
+            return pd.qcut(s, q=quantiles, labels=False, duplicates='drop')
+            
+        df["Rank"] = df.groupby("Date")["Future_Return"].transform(rank_quantiles)
+        df["target"] = np.nan
+        df.loc[df["Rank"] == (quantiles - 1), "target"] = 1.0 
+        df.loc[df["Rank"] == 0, "target"] = 0.0               
+        
+        df.loc[df["Future_Return"].isna(), "target"] = np.nan
+        cols_to_drop = ["Future_Return", "Rank"]
+
+    elif strategy == "trend_scanning":
+        fwd_returns = pd.concat([(df.groupby("ticker")["Close"].shift(-h) / df["Close"]) - 1 for h in range(1, horizon + 1)], axis=1)
+        time_arr = np.arange(1, horizon + 1)
+        time_dev = time_arr - time_arr.mean()
+        time_var = np.sum(time_dev**2)
+        
+        ret_mean = fwd_returns.mean(axis=1)
+        ret_dev = fwd_returns.sub(ret_mean, axis=0)
+        
+        cov = ret_dev.dot(time_dev)
+        slope = cov / time_var
+        
+        df["target"] = (slope > 0).astype(float)
+        df.loc[fwd_returns.iloc[:, -1].isna(), "target"] = np.nan
+        cols_to_drop = []
+
+    elif strategy == "squeeze_breakout":
+        if "Bollinger_Width_21d" not in df.columns:
+            raise ValueError("Bollinger_Width_21d não encontrada.")
+            
+        future_return = df.groupby("ticker")["Close"].shift(-horizon) / df["Close"] - 1
+        thresh_bb = df.groupby("ticker")["Bollinger_Width_21d"].transform(lambda x: x.quantile(0.20))
+        cond_squeeze = df["Bollinger_Width_21d"] <= thresh_bb
+        
+        dynamic_thresh = np.maximum(threshold, vol_h * 0.5) if has_vol else threshold
+        cond_breakout = future_return > dynamic_thresh
+        
+        df["target"] = (cond_squeeze & cond_breakout).astype(float)
+        df.loc[future_return.isna(), "target"] = np.nan
+        cols_to_drop = []
+
+    elif strategy == "meta_labeling":
+        primary_signal_col = config_target.get("primary_signal_col", "MACD_Hist")
+        primary_signal_cond = config_target.get("primary_signal_cond", ">")
+        primary_signal_val = config_target.get("primary_signal_val", 0)
+        
+        if primary_signal_col not in df.columns:
+             if "RSI_14d" in df.columns:
+                 primary_signal_col, primary_signal_cond, primary_signal_val = "RSI_14d", "<", 30
+             else:
+                 raise ValueError("Coluna de sinal primario nao encontrada para Meta-Labeling.")
+        
+        if primary_signal_cond == ">": signal = df[primary_signal_col] > primary_signal_val
+        elif primary_signal_cond == "<": signal = df[primary_signal_col] < primary_signal_val
+        else: signal = df[primary_signal_col] == primary_signal_val
+            
+        future_return = df.groupby("ticker")["Close"].shift(-horizon) / df["Close"] - 1
+        profit_threshold = config_target.get("profit_threshold", 0.0)
+        
+        target = np.full(len(df), np.nan)
+        mask_signal_true = signal.values
+        ret_signal_true = future_return.values[mask_signal_true]
+        
+        win_mask = ret_signal_true > profit_threshold
+        target[mask_signal_true] = np.where(win_mask, 1.0, 0.0)
+        
+        df["target"] = target
+        df.loc[future_return.isna(), "target"] = np.nan
+        cols_to_drop = []
+
     else:
         raise ValueError(f"Estratégia de target desconhecida: {strategy}")
 
     df = df.dropna(subset=["target"]).reset_index(drop=True)
     df["target"] = df["target"].astype(int)
+    return df, cols_to_drop
     return df, cols_to_drop
 
 
