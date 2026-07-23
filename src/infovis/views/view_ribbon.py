@@ -101,7 +101,7 @@ def render_summary_card(
         else:
             fig.add_annotation(text="Sem dados de Features", showarrow=False)
 
-    elif summary_view == "SHAP Summary":
+    elif summary_view == "SHAP":
         xai_bulk = load_bulk_xai_metadata(current_dataset)
         if not xai_bulk.empty:
             df_for_features = (
@@ -399,8 +399,11 @@ def render_horizontal_ribbon(
     for i, row in df_limited.iterrows():
         with cols[i]:
             if i == 0:
-                st.markdown("<div class='ribbon-column-marker' style='display:none'></div>", unsafe_allow_html=True)
-                
+                st.markdown(
+                    "<div class='ribbon-column-marker' style='display:none'></div>",
+                    unsafe_allow_html=True,
+                )
+
             is_selected = (st.session_state.get("selected_exp") == row["exp_id"]) and (
                 st.session_state.get("selected_dataset") == current_dataset
             )
@@ -534,9 +537,6 @@ def render_horizontal_ribbon(
     # Handlers para os modais (Dialogs)
     if st.session_state.get(f"open_dialog_{panel_id}"):
         clicked_id = st.session_state[f"open_dialog_{panel_id}"]
-        clicked_dataset = st.session_state.get(
-            f"dialog_dataset_{panel_id}", current_dataset
-        )
         st.session_state[f"open_dialog_{panel_id}"] = False
         # Import lazy to avoid circular issues
         from views.view_xray import render_xray
