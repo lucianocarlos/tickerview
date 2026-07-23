@@ -4,9 +4,6 @@ import glob
 import sys
 import duckdb
 
-# Garante que o Python ache o indicadores na mesma pasta
-sys.path.append(os.path.dirname(__file__))
-
 from indicadores import (
     calcular_PL,
     calcular_PVP,
@@ -21,8 +18,44 @@ from indicadores import (
     calcular_Bollinger_Width,
     calcular_Alavancagem,
     calcular_Margem_EBIT,
-    calcular_ZScore_Setorial
 )
+
+try:
+    import yaml
+except ImportError:
+    yaml = None
+
+
+def carregar_config_file(caminho_base):
+    """Carrega .yaml se existir, senão usa .json como fallback."""
+    p_yaml = (
+        caminho_base + ".yaml"
+        if not caminho_base.endswith((".yaml", ".yml", ".json"))
+        else caminho_base
+    )
+    p_json = os.path.splitext(caminho_base)[0] + ".json"
+
+    path_final = None
+    if os.path.exists(caminho_base) and os.path.isfile(caminho_base):
+        path_final = caminho_base
+    elif os.path.exists(p_yaml):
+        path_final = p_yaml
+    elif os.path.exists(p_json):
+        path_final = p_json
+
+    if not path_final or not os.path.exists(path_final):
+        return {}
+
+    ext = os.path.splitext(path_final)[1].lower()
+    with open(path_final, "r", encoding="utf-8") as f:
+        if ext in [".yaml", ".yml"]:
+            return yaml.safe_load(f) if yaml else {}
+        else:
+            return json.load(f)
+
+
+# Garante que o Python ache o indicadores na mesma pasta
+sys.path.append(os.path.dirname(__file__))
 
 
 def construir_tabela_mestre():
@@ -36,16 +69,16 @@ def construir_tabela_mestre():
 
     # --- Dinâmica de Aquisição ---
     raw_base = os.path.join(project_root, "data", "raw")
-    config_mestre_path = os.path.join(os.path.dirname(__file__), "dataset_config.json")
-    if not os.path.exists(config_mestre_path):
-        config_mestre_path = os.path.join(
-            os.path.dirname(os.path.dirname(__file__)), "dataset_config.json"
+    config_mestre_dir = os.path.dirname(__file__)
+    config_mestre = carregar_config_file(
+        os.path.join(config_mestre_dir, "dataset_config")
+    )
+    if not config_mestre:
+        config_mestre = carregar_config_file(
+            os.path.join(os.path.dirname(config_mestre_dir), "dataset_config")
         )
 
-    alvo = "latest"
-    if os.path.exists(config_mestre_path):
-        with open(config_mestre_path, "r", encoding="utf-8") as f:
-            alvo = json.load(f).get("aquisicao_alvo", "latest")
+    alvo = config_mestre.get("aquisicao_alvo", "latest")
 
     if alvo != "latest" and os.path.exists(os.path.join(raw_base, alvo)):
         aquisicao_atual = alvo
@@ -146,9 +179,9 @@ def construir_tabela_mestre():
     # 6. Momentum (1d, 5d, 10d, 21d, 63d)
     if "Close" in df_mestre.columns:
         for dias in [1, 5, 10, 21, 63]:
-            df_mestre[f"Momentum_{dias}d"] = df_mestre.groupby("ticker")["Close"].transform(
-                lambda x: calcular_Momentum(x, janela=dias)
-            )
+            df_mestre[f"Momentum_{dias}d"] = df_mestre.groupby("ticker")[
+                "Close"
+            ].transform(lambda x: calcular_Momentum(x, janela=dias))
 
     # 7. Técnicos (RSI, MACD, Bollinger Width)
     if "Close" in df_mestre.columns:
@@ -158,15 +191,15 @@ def construir_tabela_mestre():
         df_mestre["MACD_Hist"] = df_mestre.groupby("ticker")["Close"].transform(
             lambda x: calcular_MACD(x)
         )
-        df_mestre["Bollinger_Width_21d"] = df_mestre.groupby("ticker")["Close"].transform(
-            lambda x: calcular_Bollinger_Width(x, janela=21)
-        )
+        df_mestre["Bollinger_Width_21d"] = df_mestre.groupby("ticker")[
+            "Close"
+        ].transform(lambda x: calcular_Bollinger_Width(x, janela=21))
 
     # 8. Anomalia de Volume
     if "Volume" in df_mestre.columns:
-        df_mestre["Volume_Anomaly_21d"] = df_mestre.groupby("ticker")["Volume"].transform(
-            lambda x: calcular_Anomalia_Volume(x, janela=21)
-        )
+        df_mestre["Volume_Anomaly_21d"] = df_mestre.groupby("ticker")[
+            "Volume"
+        ].transform(lambda x: calcular_Anomalia_Volume(x, janela=21))
 
     # 9. Ratios Financeiros Adicionais
     if "Divida_Total" in df_mestre.columns and "Ativo_Total" in df_mestre.columns:
@@ -182,14 +215,20 @@ def construir_tabela_mestre():
     # Aplicar em algumas features numéricas importantes (ex: P_L_Calculado, ROE_Calculado)
     if "sector" in df_mestre.columns and "Date" in df_mestre.columns:
         # Só calcula se a feature existe
-        cross_sect_cols = ["P_L_Calculado", "P_VP_Calculado", "ROE_Calculado", "Momentum_21d", "Alavancagem_Calculada"]
+        cross_sect_cols = [
+            "P_L_Calculado",
+            "P_VP_Calculado",
+            "ROE_Calculado",
+            "Momentum_21d",
+            "Alavancagem_Calculada",
+        ]
         for col in cross_sect_cols:
             if col in df_mestre.columns:
                 # Agrupamos por data e então por setor (temos que passar a data tbm pro transform)
                 # O mais eficiente no pandas: groupby(['Date', 'sector']) e então tira o zscore.
-                df_mestre[f"{col}_zscore_setorial"] = df_mestre.groupby(['Date', 'sector'])[col].transform(
-                    lambda x: (x - x.mean()) / (x.std() + 1e-8)
-                )
+                df_mestre[f"{col}_zscore_setorial"] = df_mestre.groupby(
+                    ["Date", "sector"]
+                )[col].transform(lambda x: (x - x.mean()) / (x.std() + 1e-8))
 
     print(
         "O Pipeline de MLOps agora é responsável pela Limpeza Final (Nulos, Outliers, Scaling) para evitar Data Leakage."
@@ -234,14 +273,17 @@ def construir_tabela_mestre():
     pacote_configs = {}
     pastas = ["precos", "cvm", "info", "balanco_yf"]
     for pasta in pastas:
-        c_path = os.path.join(os.path.dirname(__file__), pasta, "pre_config.json")
-        if os.path.exists(c_path):
-            with open(c_path, "r", encoding="utf-8") as f:
-                pacote_configs[pasta] = json.load(f)
+        cfg = carregar_config_file(
+            os.path.join(os.path.dirname(__file__), pasta, "pre_config")
+        )
+        if cfg:
+            pacote_configs[pasta] = cfg
 
-    if os.path.exists(config_mestre_path):
-        with open(config_mestre_path, "r", encoding="utf-8") as f:
-            pacote_configs["mestre"] = json.load(f)
+    cfg_mestre = carregar_config_file(
+        os.path.join(os.path.dirname(__file__), "dataset_config")
+    )
+    if cfg_mestre:
+        pacote_configs["mestre"] = cfg_mestre
 
     exp_json_data = {
         "id_dataset": version_str,

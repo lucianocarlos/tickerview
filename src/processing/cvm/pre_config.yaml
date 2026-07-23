@@ -1,0 +1,8 @@
+# ==============================================================================
+# TICKERVIEW PROCESSING - PRÉ-CONFIGURAÇÃO CVM / DEMONSTRAÇÕES FINANCEIRAS (YAML)
+# ==============================================================================
+# Arquitetura nova: A limpeza e normalização não ocorrem mais neste nível
+# (camada Raw) para blindar a esteira contra Data Leakage.
+# ==============================================================================
+_help:
+  - "Arquitetura nova: A limpeza e normalização não ocorrem mais neste nível (camada Raw) para blindar contra Data Leakage."

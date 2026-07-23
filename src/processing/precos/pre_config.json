@@ -1,6 +1,0 @@
-{
-  "_help": [
-    "ohlcv_nan_strategy: Tratamento de nulos temporal para as séries de preços (ex: ffill, drop). O ffill é seguro para a linha do tempo e não gera vazamento global."
-  ],
-  "ohlcv_nan_strategy": "ffill"
-}

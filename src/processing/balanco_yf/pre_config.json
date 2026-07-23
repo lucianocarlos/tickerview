@@ -1,5 +1,0 @@
-{
-  "_help": [
-    "Arquitetura nova: A imputação de NaNs não ocorre mais neste nível para evitar Data Leakage. O MLOps decide a melhor estratégia granular."
-  ]
-}

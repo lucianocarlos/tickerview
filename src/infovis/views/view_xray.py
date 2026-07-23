@@ -105,15 +105,26 @@ def render_xray(df_report, exp_id_selecionado):
             st.warning("Matriz de Confusão indisponível.")
 
     with st.expander("Ver Parâmetros Brutos e Tabela"):
+        import yaml
         col_params, col_table = st.columns([3, 7])
         with col_params:
             st.write("**Parâmetros do Modelo**")
-            st.json(row.get("parameters_dict", row["parameters"]))
+            params = row.get("parameters_dict", row["parameters"])
+            if isinstance(params, dict):
+                st.code(yaml.dump(params, default_flow_style=False, sort_keys=False), language="yaml")
+            else:
+                st.write(params)
+                
         with col_table:
             st.write("**Tabela de Dados Brutos**")
             df_row = pd.DataFrame([row])
+            # Remove as colunas _dict que são apenas de uso interno
+            cols_to_drop = [c for c in df_row.columns if c.endswith('_dict') or c == 'parameters']
+            df_row = df_row.drop(columns=cols_to_drop, errors="ignore")
+            
             for col in df_row.columns:
                 if df_row[col].apply(lambda x: isinstance(x, (dict, list))).any():
+                    # Para as colunas originais de config, formatar bonitinho em yaml também se for string
                     df_row[col] = df_row[col].astype(str)
             st.dataframe(df_row, width="stretch", height=100)
 

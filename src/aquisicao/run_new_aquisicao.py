@@ -2,6 +2,7 @@ import os
 import sys
 import glob
 import json
+import yaml
 from datetime import datetime
 import time
 import subprocess
@@ -38,14 +39,14 @@ def criar_nova_aquisicao(root_dir):
     novo_caminho.mkdir(exist_ok=True)
     
     # Criar json
-    info_path = novo_caminho / "info_aquisicao.json"
+    info_path = novo_caminho / "info_aquisicao.yaml"
     info = {
         "aquisicao_id": nova_pasta,
         "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
         "notas": ""
     }
     with open(info_path, "w", encoding="utf-8") as f:
-        json.dump(info, f, indent=4, ensure_ascii=False)
+        yaml.safe_dump(info, f, default_flow_style=False, sort_keys=False, allow_unicode=True)
         
     return nova_pasta
 
@@ -84,13 +85,13 @@ if __name__ == "__main__":
         duration_sec = round(end_time - start_time, 2)
         
         # Atualiza o json
-        info_path = root_dir / "data" / "raw" / nova_aquisicao / "info_aquisicao.json"
+        info_path = root_dir / "data" / "raw" / nova_aquisicao / "info_aquisicao.yaml"
         if info_path.exists():
             with open(info_path, "r", encoding="utf-8") as f:
-                info = json.load(f)
+                info = yaml.safe_load(f)
             info["tempo_execucao_segundos"] = duration_sec
             with open(info_path, "w", encoding="utf-8") as f:
-                json.dump(info, f, indent=4, ensure_ascii=False)
+                yaml.safe_dump(info, f, default_flow_style=False, sort_keys=False, allow_unicode=True)
                 
         print(f"\n=== AQUISIÇÃO {nova_aquisicao} FINALIZADA EM {duration_sec}s ===")
     except Exception as e:

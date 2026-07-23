@@ -1,5 +1,6 @@
 import os
 import json
+import yaml
 import time
 from datetime import datetime
 import pandas as pd
@@ -17,7 +18,7 @@ def extracao_opcoes():
     project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 
     # --- Dinâmica de Aquisição ---
-    config_file = os.path.join(project_root, "config", "companhias.json")
+    config_file = os.path.join(os.path.dirname(__file__), "companhias.yaml")
 
     # Se foi chamado pelo orquestrador, usa a pasta que o orquestrador mandou
     if "AQUISICAO_TARGET_DIR" in os.environ:
@@ -32,10 +33,10 @@ def extracao_opcoes():
     # 1. Leitura das companhias
     try:
         with open(config_file, "r", encoding="utf-8") as f:
-            data = json.load(f)
+            data = yaml.safe_load(f)
             tickers = [c.get("ticker") for c in data["companies"] if c.get("ticker")]
     except Exception as e:
-        print(f"Erro ao ler companhias.json: {e}")
+        print(f"Erro ao ler companhias.yaml: {e}")
         return
 
     data_extracao = datetime.now().date()

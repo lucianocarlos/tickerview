@@ -1,5 +1,6 @@
 import os
 import json
+import yaml
 import time
 import pandas as pd
 import yfinance as yf
@@ -116,7 +117,7 @@ def fetch_prices():
     project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 
     # --- Dinâmica de Aquisição ---
-    config_file = os.path.join(project_root, "config", "companhias.json")
+    config_file = os.path.join(os.path.dirname(__file__), "companhias.yaml")
 
     # Se foi chamado pelo orquestrador, usa a pasta que o orquestrador mandou
     if "AQUISICAO_TARGET_DIR" in os.environ:
@@ -131,12 +132,12 @@ def fetch_prices():
     # --- LEITURA DO JSON ---
     try:
         with open(config_file, "r") as f:
-            data = json.load(f)
+            data = yaml.safe_load(f)
             # vai montar uma lista de companies, se esta tiver um ticker definido no dataset
             # c.get("ticker") (o primeiro), extrai epenas o valor de 'tikcer', mantando assim uma lista de tickers
             tickers = [c.get("ticker") for c in data["companies"] if c.get("ticker")]
     except Exception as e:
-        print(f"Erro ao ler universe.json: {e}")
+        print(f"Erro ao ler companhias.yaml: {e}")
         return
 
     print(f"Iniciando extração em lote para {len(tickers)} ativos...")

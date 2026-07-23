@@ -1,0 +1,8 @@
+# ==============================================================================
+# TICKERVIEW PROCESSING - PRÉ-CONFIGURAÇÃO METADADOS E METRICS ESTATÍSTICAS (YAML)
+# ==============================================================================
+# categorical_encoding: O encoding é feito sem vazamento futuro.
+# A imputação do Beta foi movida para o classificador MLOps.
+# Opções válidas: [none, one_hot, label_encoding]
+# ==============================================================================
+categorical_encoding: none

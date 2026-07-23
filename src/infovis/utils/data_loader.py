@@ -80,10 +80,17 @@ def load_all_metrics():
             return val
         if isinstance(val, str):
             try:
+                # Otimização extrema: JSON nativo do Python (em C) é 100x mais rápido
+                # que o yaml.safe_load puro em Python. Tentamos JSON primeiro,
+                # mesmo que falhe, a exceção é mais rápida que o parser do YAML completo.
+                return json.loads(val)
+            except json.JSONDecodeError:
+                pass
+            
+            try:
                 if yaml is not None:
                     res = yaml.safe_load(val)
                     return res if isinstance(res, dict) else {}
-                return json.loads(val)
             except:
                 pass
         return {}

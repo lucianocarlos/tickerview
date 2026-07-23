@@ -1,6 +1,7 @@
 import os
 import glob
 import json
+import yaml
 import pandas as pd
 import requests
 import zipfile
@@ -14,7 +15,7 @@ def fetch_cvm():
     project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 
     # --- Dinâmica de Aquisição ---
-    config_file = os.path.join(project_root, "config", "companhias.json")
+    config_file = os.path.join(os.path.dirname(__file__), "companhias.yaml")
     
     # Se foi chamado pelo orquestrador, usa a pasta que o orquestrador mandou
     if "AQUISICAO_TARGET_DIR" in os.environ:
@@ -26,11 +27,11 @@ def fetch_cvm():
 
     os.makedirs(output_dir, exist_ok=True)
 
-    # 1. Leitura do universe.json e mapeamento
+    # 1. Leitura do companhias.yaml e mapeamento
     print(f"\n[1/6] Lendo CNPJs completos do {config_file}...")
     try:
         with open(config_file, "r") as f:
-            data = json.load(f)
+            data = yaml.safe_load(f)
 
         cnpj_to_ticker = {}
         for company in data.get("companies", []):
@@ -42,7 +43,7 @@ def fetch_cvm():
                 cnpj_to_ticker[cnpj_clean] = ticker
 
         if not cnpj_to_ticker:
-            print("Aviso: Nenhum mapeamento de CNPJ encontrado no universe.json.")
+            print("Aviso: Nenhum mapeamento de CNPJ encontrado no companhias.yaml.")
             return
 
         print(f"      {len(cnpj_to_ticker)} ativos/CNPJs carregados.")
@@ -51,7 +52,7 @@ def fetch_cvm():
         print(f"Erro: Arquivo {config_file} não encontrado.")
         return
     except Exception as e:
-        print(f"Erro ao processar universe.json: {e}")
+        print(f"Erro ao processar companhias.yaml: {e}")
         return
 
     # 2. Lógica Incremental
@@ -75,7 +76,7 @@ def fetch_cvm():
                 if (current_year - 1) not in anos_faltantes and (current_year - 1) in anos_alvo:
                     anos_faltantes.append(current_year - 1)
 
-                # 2) Verificar se existem novas empresas no universe.json que não estão na base
+                # 2) Verificar se existem novas empresas no companhias.yaml que não estão na base
                 df_existente["cnpj_clean"] = df_existente["CNPJ_CIA"].str.replace(
                     r"\D", "", regex=True
                 )
@@ -84,7 +85,7 @@ def fetch_cvm():
 
                 if cnpjs_novos:
                     print(
-                        f"      Detectados {len(cnpjs_novos)} novos CNPJs no universe.json que estão ausentes na base."
+                        f"      Detectados {len(cnpjs_novos)} novos CNPJs no companhias.yaml que estão ausentes na base."
                     )
                     # Se houver novas empresas, forçamos o re-processamento de todos os anos alvo
                     anos_faltantes = anos_alvo

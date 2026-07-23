@@ -1,0 +1,12 @@
+# ==============================================================================
+# TICKERVIEW PROCESSING - CONFIGURAÇÃO DE AQUISIÇÃO DO DATASET MESTRE (YAML)
+# ==============================================================================
+# Define qual lote/pasta de dados brutos extraídos da camada Raw será utilizado
+# como base para a construção do dataset consolidado parquet.
+# ==============================================================================
+
+# aquisicao_alvo: Pasta de aquisição a utilizar na camada raw.
+# Opções válidas:
+#   - "latest": Usa automaticamente a pasta de aquisição mais recente criada por data/hora
+#   - "aquisicao_001": Nome exato de uma pasta de aquisição específica no diretório raw
+aquisicao_alvo: aquisicao_003

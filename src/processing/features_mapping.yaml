@@ -1,0 +1,102 @@
+# ==============================================================================
+# TICKERVIEW PROCESSING - MAPEAMENTO DE REGRAS E ESTRATÉGIAS DE FEATURES (YAML)
+# ==============================================================================
+# Este arquivo contém o catálogo de referência de todas as opções de tratamento
+# de valores ausentes (NaNs), infinitos, outliers e padronização utilizadas no pipeline.
+# ==============================================================================
+
+# ------------------------------------------------------------------------------
+# 1. TRATAMENTO DE NULOS EM SÉRIES TEMPORAIS (PREÇOS OHLCV)
+# ------------------------------------------------------------------------------
+# drop: Descarta a linha/data inteira que contenha valores nulos (Cuidado com a perda de histórico).
+# ffill: Forward Fill. Repete o último valor financeiro/preço válido para os dias seguintes em branco.
+# bfill: Backward Fill. Busca o próximo valor válido no futuro e 'puxa' para os dias anteriores em branco.
+# interpolate_linear: Preenche o buraco no gráfico traçando uma reta matemática entre os pontos conhecidos.
+Tratamento_NaNs_Series_Temporais:
+  - drop
+  - ffill
+  - bfill
+  - interpolate_linear
+
+# ------------------------------------------------------------------------------
+# 2. TRATAMENTO DE NULOS EM DEMONSTRAÇÕES FINANCEIRAS (CVM / BALANÇOS)
+# ------------------------------------------------------------------------------
+# fill_zero: Preenche os buracos com o valor numérico 0 (Zero).
+# drop_row: Elimina a linha inteira do dataset se tiver valor ausente (cuidado com perda de ativos).
+# sector_median: Substitui o valor nulo pela mediana dos valores de outras empresas do MESMO setor.
+Tratamento_NaNs_Financas:
+  - fill_zero
+  - drop_row
+  - sector_median
+
+# ------------------------------------------------------------------------------
+# 3. TRATAMENTO DE NULOS EM METADADOS E DADOS ESTÁTICOS
+# ------------------------------------------------------------------------------
+# sector_median: Substitui pela mediana do mesmo setor cadastral.
+# sector_mean: Substitui pela média matemática do mesmo setor.
+# global_median: Substitui pela mediana global de todo o universo de ativos da bolsa.
+Tratamento_NaNs_Estaticos:
+  - sector_median
+  - sector_mean
+  - global_median
+
+# ------------------------------------------------------------------------------
+# 4. ALGORITMOS DE TRATAMENTO E SUAVIZAÇÃO DE OUTLIERS
+# ------------------------------------------------------------------------------
+# none: Não aplica nenhum filtro de outliers. Mantém os dados originais intactos.
+# clip_99_1: Achata (Winsorize) valores extremos cortando os top 1% maiores e 1% menores ao percentil 99/1.
+# clip_95_5: Corte mais agressivo, achatando os top 5% maiores e 5% menores aos percentis 95/5.
+# zscore_3: Apaga os dados que fogem a 3 desvios-padrões de distância do centro da distribuição.
+# iqr_1_5: Usa a regra da Distância Interquartil do Boxplot (1.5x IQR).
+Tratamento_Outliers:
+  - none
+  - clip_99_1
+  - clip_95_5
+  - zscore_3
+  - iqr_1_5
+
+# ------------------------------------------------------------------------------
+# 5. NORMALIZAÇÃO E ESCALONAMENTO DE ESCALA (PADRONIZAÇÃO)
+# ------------------------------------------------------------------------------
+# none: Sem normalização. Recomendado se for rodar puramente modelos de Árvores de Decisão/GBDT.
+# standard: StandardScaler (Média=0, Desvio Padrão=1). Centraliza a curva normal.
+# minmax: MinMaxScaler. Espreme os valores proporcionalmente para o intervalo rígido entre 0 e 1.
+# robust: RobustScaler. Usa Mediana e Quartis em vez de Média, altamente imune a outliers.
+Normalizacao_Padronizacao:
+  - none
+  - standard
+  - minmax
+  - robust
+
+# ------------------------------------------------------------------------------
+# 6. TRATAMENTO DE NULOS EM BALANÇOS DO YAHOO FINANCE
+# ------------------------------------------------------------------------------
+# drop_column_if_high_nan: Apaga a coluna inteira se a taxa de dados ausentes ultrapassar o limite.
+# fill_zero: Preenche balanços sem registro com 0.
+# sector_median: Imputa a mediana do setor para a conta contábil.
+Tratamento_NaNs_Balanco_Yahoo:
+  - drop_column_if_high_nan
+  - fill_zero
+  - sector_median
+
+# ------------------------------------------------------------------------------
+# 7. TRATAMENTO DE INFINITOS NO JOIN MESTRE
+# ------------------------------------------------------------------------------
+# replace_nan: Converte valores infinitos (vindas de divisões por zero) para NaN para a próxima etapa.
+# drop_row: Descarta a linha contendo o valor infinito.
+# none: Mantém infinitos intactos.
+Tratamento_Infinitos_Mestre:
+  - replace_nan
+  - drop_row
+  - none
+
+# ------------------------------------------------------------------------------
+# 8. VARREDURA FINAL DE IMPUTAÇÃO NO JOIN MESTRE
+# ------------------------------------------------------------------------------
+# drop_all: Varredura final que apaga sumariamente qualquer linha que ainda tenha restado com NaN.
+# fill_median_sector: Varredura final que salva as linhas preenchendo os últimos NaNs com a mediana do setor.
+# fill_zero: Preenche NaNs remanescentes com 0.
+Tratamento_NaNs_Mestre_Final:
+  - drop_all
+  - fill_median_sector
+  - fill_zero

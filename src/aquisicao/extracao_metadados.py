@@ -1,5 +1,6 @@
 import os
 import json
+import yaml
 import pandas as pd
 import yfinance as yf
 
@@ -11,7 +12,7 @@ def fetch_metadata():
     project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 
     # --- Dinâmica de Aquisição ---
-    config_file = os.path.join(project_root, "config", "companhias.json")
+    config_file = os.path.join(os.path.dirname(__file__), "companhias.yaml")
 
     # Se foi chamado pelo orquestrador, usa a pasta que o orquestrador mandou
     if "AQUISICAO_TARGET_DIR" in os.environ:
@@ -24,17 +25,17 @@ def fetch_metadata():
     # Garantir que a pasta de destino exista
     os.makedirs(output_dir, exist_ok=True)
 
-    # Lendo o universe.json para extrair os tickers
+    # Lendo o companhias.yaml para extrair os tickers
     print(f"Lendo base de ativos em {config_file}...")
     try:
         with open(config_file, "r") as f:
-            data = json.load(f)
+            data = yaml.safe_load(f)
 
         tickers = []
         if isinstance(data, dict) and "companies" in data:
             tickers = [c.get("ticker") for c in data["companies"] if c.get("ticker")]
         else:
-            print("Erro: A estrutura do universe.json não possui a lista 'companies'.")
+            print("Erro: A estrutura do companhias.yaml não possui a lista 'companies'.")
             return
 
         if not tickers:
@@ -42,7 +43,7 @@ def fetch_metadata():
             return
 
     except Exception as e:
-        print(f"Erro ao ler universe.json: {e}")
+        print(f"Erro ao ler companhias.yaml: {e}")
         return
 
     # Lista vazia para armazenar os dados de metadados

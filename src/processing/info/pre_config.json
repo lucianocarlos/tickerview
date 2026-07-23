@@ -1,6 +1,0 @@
-{
-  "_help": [
-    "categorical_encoding: O encoding é feito sem vazamento futuro. A imputação do Beta foi movida para o classificador MLOps."
-  ],
-  "categorical_encoding": "none"
-}

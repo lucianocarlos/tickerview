@@ -20,48 +20,6 @@ datasets:
 # TODAS AS ESTRATÉGIAS DE TARGET (13 ALVOS COMPLETO)
 # ------------------------------------------------------------------------------
 target_strategies:
-  - name: outperformance
-    horizon_days: 10
-    threshold: 0.02
-
-  - name: volatility_regime
-    horizon_days: 5
-
-  - name: directional_regime
-    horizon_days: 60
-    threshold: 0.20
-
-  - name: fundamental_turnaround
-    horizon_days: 120
-
-  - name: drawdown_risk
-    horizon_days: 4
-    threshold: 0.03
-
-  - name: meta_labeling
-    horizon_days: 10
-    primary_signal_col: RSI_14d
-    primary_signal_cond: "<"
-    primary_signal_val: 35
-    profit_threshold: 0.02
-
-  - name: triple_barrier
-    horizon_days: 20
-    pt_sl_ratio:
-      - 2.0
-      - 1.0
-
-  - name: vol_adjusted_return
-    horizon_days: 10
-    sharpe_threshold: 0.8
-
-  - name: cross_sectional_quantiles
-    horizon_days: 5
-    quantiles: 10
-
-  - name: trend_scanning
-    horizon_days: 10
-
   - name: squeeze_breakout
     horizon_days: 10
     threshold: 0.03
@@ -101,18 +59,6 @@ models:
     reg_lambda: [1.0]
     drop_feat: [none]
 
-  lightgbm:
-    pref_queue: gpu_exclusive
-    n_estimators: [50]
-    max_depth: [4]
-    learning_rate: [0.1]
-    num_leaves: [15]
-    subsample: [0.8]
-    colsample_bytree: [0.8]
-    reg_alpha: [0.0]
-    reg_lambda: [1.0]
-    drop_feat: [none]
-
   random_forest:
     pref_queue: cpu
     n_estimators: [30]
@@ -120,27 +66,6 @@ models:
     max_features: [sqrt]
     min_samples_leaf: [10]
     min_samples_split: [10]
-    ccp_alpha: [0.0]
-    class_weight: [balanced]
-    drop_feat: [none]
-
-  mlp:
-    pref_queue: gpu_exclusive
-    hidden_layer_sizes: [[64, 32]]
-    learning_rate_init: [0.01]
-    max_iter: [50]
-    patience: [5]
-    tol: [0.001]
-    activation: [relu]
-    dropout_p: [0.2]
-    class_weight: [balanced]
-    drop_feat: [none]
-
-  decision_tree:
-    pref_queue: cpu
-    max_depth: [5]
-    min_samples_split: [10]
-    min_samples_leaf: [5]
     ccp_alpha: [0.0]
     class_weight: [balanced]
     drop_feat: [none]
@@ -158,9 +83,4 @@ models:
     max_iter: [50]
     weight_decay: [0.0001]
     class_weight: [balanced]
-    drop_feat: [none]
-
-  voting_classifier:
-    pref_queue: gpu_exclusive
-    voting: [soft]
     drop_feat: [none]

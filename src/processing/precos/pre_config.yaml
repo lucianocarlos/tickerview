@@ -1,0 +1,10 @@
+# ==============================================================================
+# TICKERVIEW PROCESSING - PRÉ-CONFIGURAÇÃO DA BASE DE PREÇOS (YAML)
+# ==============================================================================
+# Regras de tratamento temporal para séries históricas de preços (OHLCV).
+# ==============================================================================
+
+# ohlcv_nan_strategy: Tratamento de nulos temporal para as séries de preços.
+# O 'ffill' (Forward Fill) é seguro para a linha do tempo e não gera vazamento global.
+# Opções válidas: [ffill, bfill, drop, interpolate_linear]
+ohlcv_nan_strategy: ffill

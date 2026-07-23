@@ -157,7 +157,7 @@ def model_exists(experiment_id, model_name, hyperparameters):
     """Verifica se esse exato modelo já foi computado nesta matriz arquitetônica (Checkpoint de Modelo)."""
     conn = get_connection()
     cur = conn.cursor()
-    hparams_str = json.dumps(hyperparameters, ensure_ascii=False) if isinstance(hyperparameters, dict) else hyperparameters
+    hparams_str = serialize_to_yaml(hyperparameters)
     
     cur.execute('''
         SELECT id FROM models
@@ -192,7 +192,7 @@ def save_model_results(experiment_id, model_name, hyperparameters, exec_time_sec
     cur = conn.cursor()
     try:
         # 1. Inserir o Modelo
-        hparams_str = json.dumps(hyperparameters, ensure_ascii=False) if isinstance(hyperparameters, dict) else hyperparameters
+        hparams_str = serialize_to_yaml(hyperparameters)
         cur.execute('''
             INSERT INTO models (experiment_id, model_name, hyperparameters, execution_time_sec, hardware_used)
             VALUES (?, ?, ?, ?, ?)

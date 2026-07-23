@@ -1,6 +1,7 @@
 import os
 import glob
 import json
+import yaml
 import time
 import requests
 import pandas as pd
@@ -18,7 +19,7 @@ def fetch_fundamentals():
     aquisicao_atual = os.path.basename(sorted(aquisicoes)[-1]) if aquisicoes else "aquisicao_001"
     aquisicao_dir = os.path.join(raw_base, aquisicao_atual)
     os.makedirs(aquisicao_dir, exist_ok=True)
-    config_file = os.path.join(project_root, 'config', 'companhias.json')
+    config_file = os.path.join(os.path.dirname(__file__), "companhias.yaml")
     output_dir = os.path.join(aquisicao_dir, 'fundamentals')
     output_file = os.path.join(output_dir, 'fundamentals.parquet')
     
@@ -28,7 +29,7 @@ def fetch_fundamentals():
     # Lê os ativos
     try:
         with open(config_file, 'r') as f:
-            data = json.load(f)
+            data = yaml.safe_load(f)
             
         # Extrai a lista de tickers do novo formato 'companies', mantendo fallback
         tickers = []
@@ -39,14 +40,14 @@ def fetch_fundamentals():
         elif isinstance(data, dict) and 'tickers' in data:
             tickers = data['tickers']
         else:
-            print("Erro: Formato não suportado em universe.json.")
+            print("Erro: Formato não suportado em companhias.yaml.")
             return
             
     except FileNotFoundError:
         print(f"Erro: Arquivo {config_file} não encontrado.")
         return
-    except json.JSONDecodeError:
-        print(f"Erro: Arquivo {config_file} possui um formato JSON inválido.")
+    except Exception as e:
+        print(f"Erro: Arquivo {config_file} possui um formato YAML inválido.")
         return
         
     all_data = []
