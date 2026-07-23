@@ -474,12 +474,14 @@ def render_horizontal_ribbon(
             else:
                 xai_data = load_xai_metadata(row["exp_id"], current_dataset)
                 if not xai_data:
-                    categories = ["Sem Dados"] * 8
+                    categories = [
+                        f"FEATURES INDISPONÍVEIS PARA O MODELO {row['model_type'].upper()}"
+                    ] * 8
                     valores = [0] * 8
                 else:
                     sorted_features = sorted(
                         xai_data.items(), key=lambda item: abs(item[1]), reverse=True
-                    )[:8]
+                    )[:10]
                     categories = []
                     seen = set()
                     for f in sorted_features:
@@ -498,36 +500,66 @@ def render_horizontal_ribbon(
                     )
                     valores = [v / max_val for v in raw_valores]
 
-            fig = go.Figure(
-                data=go.Scatterpolar(
-                    r=valores + [valores[0]],
-                    theta=categories + [categories[0]],
-                    fill="toself",
-                    line=dict(width=1),
+            if ribbon_mode == "Métricas":
+                fig = go.Figure(
+                    data=go.Scatterpolar(
+                        r=valores + [valores[0]],
+                        theta=categories + [categories[0]],
+                        fill="toself",
+                        line=dict(width=1),
+                    )
                 )
-            )
-            fig.update_layout(
-                polar=dict(
-                    radialaxis=dict(
+                fig.update_layout(
+                    polar=dict(
+                        radialaxis=dict(
+                            visible=True,
+                            range=[0, 1],
+                            tickfont=dict(size=8, color="rgba(100,100,100,0.7)"),
+                            nticks=4,
+                            angle=0,
+                        ),
+                        angularaxis=dict(
+                            showticklabels=True,
+                            tickfont=dict(size=8, color="gray"),
+                            ticks="",
+                            direction="clockwise",
+                        ),
+                    ),
+                    showlegend=False,
+                    margin=dict(t=10, b=10, l=15, r=15),
+                    height=230,
+                    paper_bgcolor="rgba(0,0,0,0)",
+                    plot_bgcolor="rgba(0,0,0,0)",
+                )
+            else:
+                fig = go.Figure(
+                    data=go.Bar(
+                        x=valores[::-1],
+                        y=categories[::-1],
+                        orientation="h",
+                        marker=dict(
+                            color=valores[::-1], colorscale="Teal", showscale=False
+                        ),
+                    )
+                )
+                fig.update_layout(
+                    showlegend=False,
+                    margin=dict(t=10, b=10, l=15, r=15),
+                    height=230,
+                    paper_bgcolor="rgba(0,0,0,0)",
+                    plot_bgcolor="rgba(0,0,0,0)",
+                    xaxis=dict(
                         visible=True,
                         range=[0, 1],
                         tickfont=dict(size=8, color="rgba(100,100,100,0.7)"),
                         nticks=4,
-                        angle=0,
                     ),
-                    angularaxis=dict(
+                    yaxis=dict(
                         showticklabels=True,
                         tickfont=dict(size=8, color="gray"),
                         ticks="",
-                        direction="clockwise",
                     ),
-                ),
-                showlegend=False,
-                margin=dict(t=10, b=10, l=15, r=15),
-                height=230,
-                paper_bgcolor="rgba(0,0,0,0)",
-                plot_bgcolor="rgba(0,0,0,0)",
-            )
+                )
             st.plotly_chart(
                 fig,
                 width="stretch",
